@@ -1,9 +1,9 @@
 [submodule "JSC"]
 	path = JSC
-	url = https://github.com/felipemanga/JSC.git
+	url = "https://github.com/felipemanga/JSC.git"
 [submodule "public"]
 	path = public
 	url = https://github.com/micojs/micojs.github.io.git
 [submodule "PokittoLib"]
-        path = slugs/PokittoLib
-        url = https://github.com/Pokitto/PokittoLib.git
+	path = slugs/PokittoLib
+	url = "https://github.com/Pokitto/PokittoLib.git"
