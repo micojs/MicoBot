@@ -1,0 +1,26 @@
+{
+    "name": "ide",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "dbg": "browserify index.js -p esmify -o ../public/index.js",
+        "rel": "browserify index.js -p esmify -o ../public/index.js && uglifyjs -c -m --keep-fnames -o ../public/index.min.js -- ../public/index.js",
+        "jsc": "browserify ../JSC/jsc.js -p esmify -o ../JSC/jsc.min.js",
+        "meta": "cd ../slugs/meta && arduino-cli compile -b gamebuino:samd:gamebuino_meta_native -v --build-cache-path ../metacore --build-path ../metabuild",
+        "all": "npm run dbg && npm run meta && npm run rel"
+    },
+    "author": "FManga",
+    "license": "MIT",
+    "dependencies": {
+        "file-saver": "^2.0.5",
+        "firebase": "^9.14.0",
+        "jszip": "^3.10.1",
+        "localforage": "^1.10.0",
+        "monaco-editor": "^0.34.1"
+    },
+    "devDependencies": {
+        "browserify": "^17.0.0",
+        "esmify": "^2.1.1"
+    }
+}

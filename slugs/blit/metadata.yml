@@ -1,0 +1,10 @@
+title: Pew pew pew
+description: A simple bullet-hell example project
+author: FManga
+splash:
+  file: assets/no-image.png
+icon:
+  file: assets/no-icon.png
+version: v0.0.1
+category: game
+url: https://micojs.github.com

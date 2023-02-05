@@ -1,0 +1,16 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "BuildBot.js",
+  "scripts": {
+    "run":"nodemon BuildBot.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google-cloud/storage": "^6.7.0",
+    "express": "^4.18.2",
+    "firebase-admin": "^11.3.0"
+  }
+}

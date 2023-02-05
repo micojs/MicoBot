@@ -1,0 +1,3 @@
+{
+    "ignore":["./Pine16K", "./public", "./slugs", "./JSC"]
+}

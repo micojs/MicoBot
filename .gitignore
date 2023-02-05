@@ -1,0 +1,17 @@
+.DS_Store
+*~
+*.o
+*.d
+*.bin
+*.elf
+node_modules
+slugs/espboybuild/*
+slugs/espboycore/*
+slugs/pico/build*
+slugs/blit/build*
+arduboy
+arduboybuild
+metabuild
+metacore
+microjsServiceAccountCred*
+settings.json
