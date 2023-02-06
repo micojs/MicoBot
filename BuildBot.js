@@ -80,6 +80,8 @@ async function pop() {
                     error = error.stderr;
                 else if ('code' in error)
                     error = error.code;
+                else if ('message' in error)
+                    error = error.message;
                 else
                     error = error + '';
             }
