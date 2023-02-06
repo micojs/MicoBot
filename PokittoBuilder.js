@@ -618,5 +618,13 @@ async function go(lib) {
     await link();
 }
 
-// go(false);
+async function boot() {
+    console.log("Compiling PokittoLib");
+    await getSources(false, true);
+    await doBuild();
+    console.log("Done");
+}
+
+boot();
+
 module.exports.PokittoBuilder = go;
