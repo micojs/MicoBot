@@ -8,6 +8,8 @@
 #include <algorithm>
 
 #undef PI
+#undef HALF_PI
+#undef TWO_PI
 
 #ifndef PRINT
 #define PRINT(x)
@@ -702,8 +704,12 @@ namespace js {
             if (auto ptr = getTaggedPtr(*object, key, true))
                 return {*ptr};
         }
-
-        undef = {};
+        auto str = std::get_if<BufferRef>(&container);
+        if (str && *str && key == V_length) {
+            undef = (int32_t) strlen(reinterpret_cast<const char*>((*str).data()));
+        } else {
+            undef = {};
+        }
         return undef;
     }
 
@@ -939,6 +945,8 @@ namespace js {
         auto str = alloc(2);
         str.object()->setFlagString();
         set(str, V_buffer, ref);
+        auto data = reinterpret_cast<const char*>(ref.data());
+        set(str, V_length, (int) (data ? strlen(data) : 0));
         return str;
     }
 

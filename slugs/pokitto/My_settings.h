@@ -23,6 +23,7 @@
 //#define PROJ_SCREENMODE TASMODELOW
 #define PROJ_SCREENMODE MODE_NOBUFFER
 
+#define PROJ_FLIP_SCREEN 1
 
 // Show the actual framerate
 // Optional. Uncomment this define to show.
