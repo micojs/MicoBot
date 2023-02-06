@@ -25,6 +25,10 @@ class TreeListNode {
         ]);
     }
 
+    remove() {
+        this.dom.remove();
+    }
+
     setActive(isActive) {
         this.dom.classList.toggle('active', !!isActive);
     }

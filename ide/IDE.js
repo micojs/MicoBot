@@ -450,6 +450,7 @@ class IDE {
         if (!confirm(`Are you sure you want to delete ${reference.path}?`)) {
             return;
         }
+
         if (this.#fs.rm(reference.path)) {
             for (let path in this.#editors) {
                 if (path == reference.path || path.startsWith(reference.path + '/')) {
@@ -458,7 +459,11 @@ class IDE {
                         this.#tabContainer.close(editor.shortPath);
                 }
             }
-            this.refreshTree();
+            let node = this.#treeNodes[reference.path];
+            if (node) {
+                node.remove();
+                delete this.#treeNodes[reference.path];
+            }
         }
     }
 
