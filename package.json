@@ -4,7 +4,8 @@
   "description": "",
   "main": "BuildBot.js",
   "scripts": {
-    "run":"nodemon BuildBot.js"
+    "run":"nodemon BuildBot.js",
+    "jsc": "cd ide && browserify ../JSC/jsc.js -p esmify -o ../JSC/jsc.min.js"
   },
   "author": "",
   "license": "ISC",
