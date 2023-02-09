@@ -887,5 +887,5 @@ function getMimeType(ext) {
 	".zir"			: "application/vnd.zul",
 	".zirz"			: "application/vnd.zul",
 	".zmm"			: "application/vnd.handheld-entertainment+xml"
-    }[ext.toLowerCase().trim()]);
+    }[ext.toLowerCase().trim()] || "application/octet-stream");
 }
