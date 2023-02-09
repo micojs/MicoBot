@@ -157,15 +157,49 @@ public:
         Command() = default;
         virtual ~Command() = default;
         virtual void draw(uint8_t* framebuffer, int y) = 0;
+        virtual void dispose(std::unique_ptr<Command>& ref) {
+            auto tmp = std::move(next);
+            ref = std::move(tmp);
+        }
     };
 
-    class TextCommand : public Command {
+    template<typename Derived>
+    class RecycleCommand : public Command {
+    public:
+        static inline std::unique_ptr<Derived> recycle;
+
+        void dispose(std::unique_ptr<Command>& ref) override {
+            std::unique_ptr<Command> tmp = std::move(this->next);
+            this->next = std::move(recycle);
+            recycle.reset(static_cast<Derived*>(ref.release()));
+            ref = std::move(tmp);
+        }
+
+        template<typename ... Args>
+        static std::unique_ptr<Derived> create(Args&& ... args) {
+            std::unique_ptr<Derived> ret;
+            if (!recycle) {
+                ret = std::make_unique<Derived>();
+                // puts("Create");
+            } else {
+                ret = std::move(recycle);
+                recycle.reset(static_cast<Derived*>(ret->next.release()));
+                // puts("Recycle");
+            }
+            ret->init(std::forward<Args>(args)...);
+            return ret;
+        }
+    };
+
+    class TextCommand : public RecycleCommand<TextCommand> {
     public:
         std::string text;
         const uint8_t* font = vsgl_t::font;
         int x;
 
-        TextCommand(const char* text, int X, int Y) : text{text}, x{X} {
+        void init(const char* text, int X, int Y) {
+            this->text = text;
+            this->x = X;
             auto h = font[1];
             this->A = ((h>>3) + ((h != 8) && (h != 16)));
             this->B = pen;
@@ -189,7 +223,7 @@ public:
                 maxY -= minY;
                 minY = 0;
             } else {
-                skip = -minY;
+                skip = -minY - 1;
                 minY = 0;
             }
 
@@ -365,18 +399,17 @@ public:
 
     };
 
-    class RectCommand : public Command {
+    class RectCommand : public RecycleCommand<RectCommand> {
     public:
         int x;
 
-        RectCommand(int x, int y, int width, int height) :
-            x(x)
-            {
-                this->minY = y;
-                this->maxY = y + height;
-                this->A = width;
-                this->B = pen;
-            }
+        void init(int x, int y, int width, int height) {
+            this->x = x;
+            this->minY = y;
+            this->maxY = y + height;
+            this->A = width;
+            this->B = pen;
+        }
 
         void draw(uint8_t* framebuffer, int Yoffset) override {
             auto y = int(this->minY) - Yoffset;
@@ -404,9 +437,8 @@ public:
 
     static void clear() {
         clearColor = pen;
-        for (std::unique_ptr<Command> cmd = std::move(first), next; cmd; cmd = std::move(next)) {
-            next = std::move(cmd->next);
-        }
+        for (std::unique_ptr<Command> cmd = std::move(first); cmd;)
+            cmd->dispose(cmd);
         last = nullptr;
     }
 
@@ -427,8 +459,9 @@ public:
              while (auto cmd = prev->get()) {
                 if (lowerBound > cmd->minY) {
                     if (y >= cmd->maxY) {
-                        prev = &cmd->next;
-                        *prev = std::move(cmd->next);
+                        cmd->dispose(*prev);
+                        // prev = &cmd->next;
+                        // *prev = std::move(cmd->next);
                         continue;
                     }
                     cmd->draw(cursor, y);
@@ -440,6 +473,8 @@ public:
 
     template<typename Func>
     static void draw(Func&& func) {
+        RectCommand::recycle.reset();
+        TextCommand::recycle.reset();
         uint8_t framebuffer[screenWidth * 8];
         for (int y = 0; y < screenHeight; y += 8) {
             if (clearColor)
@@ -449,8 +484,9 @@ public:
              while (auto cmd = prev->get()) {
                 if (lowerBound > cmd->minY) {
                     if (y >= cmd->maxY) {
-                        prev = &cmd->next;
-                        *prev = std::move(cmd->next);
+                        cmd->dispose(*prev);
+                        // prev = &cmd->next;
+                        // *prev = std::move(cmd->next);
                         continue;
                     }
                     cmd->draw(framebuffer, y);
@@ -462,7 +498,7 @@ public:
     }
 
     static void text(const char* text, int x, int y) {
-        push(std::make_unique<TextCommand>(text, x, y));
+        push(TextCommand::create(text, x, y));
     }
 
     static void rect(int x, int y, int w, int h) {
@@ -483,7 +519,7 @@ public:
         if (w <= 0 || h <= 0) {
             return;
         }
-        push(std::make_unique<RectCommand>(x, y, w, h));
+        push(RectCommand::create(x, y, w, h));
     }
 
     static void image(const uint8_t* data, int x, int y, bool mirrored, bool flipped, bool transparent) {
