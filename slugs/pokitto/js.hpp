@@ -123,7 +123,23 @@ namespace js {
 
     inline uint32_t hash(const char* ptr) {
         PROFILER;
-        uint32_t v1 = 5381, v2 = 2166136261;
+        uint32_t v1 = 5381, v2 = 2166136261, v3 = 0;
+
+        auto cursor = ptr;
+        while(uint32_t c = *cursor++){
+            if ((c - '0') > '9')
+                break;
+            auto copy = v3;
+            v3 = v3 * 10 + (c - '0');
+            if (copy > v3) {
+                cursor--;
+                break;
+            }
+        }
+
+        if (!cursor[-1])
+            return v3;
+
         while(uint32_t c = *ptr++){
             v1 = (v1 * 251) ^ c;
             v2 = (v2 ^ c) * 16777619;
@@ -713,8 +729,58 @@ namespace js {
         return undef;
     }
 
+    inline Tagged& get(const Tagged& container, uint32_t key) {
+        static Tagged undef;
+        undef = {};
+
+        auto object = std::get_if<Object*>(&container);
+        if (!object || !*object)
+            return undef;
+
+        auto objptr = *object;
+        auto buckets = objptr->buckets();
+        auto bucketCount = objptr->bucketCount();
+
+        if (!bucketCount)
+            return undef;
+
+        uint32_t pos = key;
+
+        if (pos >= bucketCount)
+            pos %= bucketCount;
+
+        for (uint32_t i = 0; i < bucketCount; ++i) {
+            auto& bucket = buckets[pos++];
+            if (pos == bucketCount)
+                pos = 0;
+            if (!bucket.key) {
+                break;
+            }
+            if (bucket.key->hash == key) {
+                // PRINT("Found ");
+                // PRINT(key.data());
+                // PRINTLN();
+                return bucket.value;
+            }
+        }
+
+        return undef;
+    }
+
     inline Tagged& get(const Tagged& container, const Tagged& key) {
-        return get(container, toString(key));
+        Tagged* ret = nullptr;
+        Overload {
+            [&](Undefined){ret = &(get(container, V_undefined));},
+            [&](Object*){ret = &(get(container, V_91Object93));},
+            [&](ResourceRef*){ret = &(get(container, V_91Resource93));},
+            [&](const RawFunction&){ret = &(get(container, V_91Function93));},
+            [&](const BufferRef& ref){ret = &(get(container, ref));},
+            [&](const int32_t& a){ret = &(a > 0 ? get(container, a) : get(container, toString(a)));},
+            [&](const uint32_t& a){ret = &(get(container, a));},
+            [&](const bool& a){ret = &(get(container, a ? V_true : V_false));},
+            [&](const float& v){ret = &(float(int(v)) == v && v > 0 ? get(container, uint32_t(v)) : get(container, toString(v)));}
+        }(key);
+        return *ret;
     }
 
     inline void gc() {
@@ -809,6 +875,63 @@ namespace js {
         return str;
     }
 
+    inline BufferRef intToBufferRef(const int32_t& v) {
+        auto val = v;
+        switch (val) {
+        case 0: return V_0;
+        case 1: return V_1;
+        case 2: return V_2;
+        case 3: return V_3;
+        case 4: return V_4;
+        case 5: return V_5;
+        case 6: return V_6;
+        case 7: return V_7;
+        case 8: return V_8;
+        case 9: return V_9;
+        case 10: return V_10;
+        case 11: return V_11;
+        case 12: return V_12;
+        case 13: return V_13;
+        case 14: return V_14;
+        case 15: return V_15;
+        case 16: return V_16;
+        case 17: return V_17;
+        case 18: return V_18;
+        case 19: return V_19;
+        case 20: return V_20;
+        case 21: return V_21;
+        case 22: return V_22;
+        case 23: return V_23;
+        case 24: return V_24;
+        case 25: return V_25;
+        case 26: return V_26;
+        case 27: return V_27;
+        case 28: return V_28;
+        case 29: return V_29;
+        case 30: return V_30;
+        case 31: return V_31;
+        case 32: return V_32;
+        }
+        uint32_t p = 12;
+        bool negative = val < 0;
+        if (negative)
+            val = -val;
+        auto str = allocBuffer(p + 1);
+        auto tmp = str.data();
+        tmp[p--] = 0;
+        while (val) {
+            auto n = val / 10;
+            tmp[p--] = '0' + (val - n * 10);
+            val = n;
+        }
+        if (negative)
+            tmp[p--] = '-';
+        for (uint32_t i = 0; p <= 12; ++i) {
+            tmp[i] = tmp[++p];
+        }
+        return str;
+    }
+
     inline BufferRef toString(const Tagged& val) {
         PROFILER;
         return Overload {
@@ -844,10 +967,10 @@ namespace js {
             },
 
             [] (const uint32_t& v) -> BufferRef {
-                auto val = v;
-                if (val == 0) {
-                    return V_0;
+                if (int32_t(v) > 0) {
+                    return intToBufferRef(v);
                 }
+                auto val = v;
                 uint32_t p = 12;
                 auto str = allocBuffer(p + 1);
                 auto tmp = str.data();
@@ -864,28 +987,7 @@ namespace js {
             },
 
             [] (const int32_t& v) -> BufferRef {
-                auto val = v;
-                if (val == 0) {
-                    return V_0;
-                }
-                uint32_t p = 12;
-                bool negative = val < 0;
-                if (negative)
-                    val = -val;
-                auto str = allocBuffer(p + 1);
-                auto tmp = str.data();
-                tmp[p--] = 0;
-                while (val) {
-                    auto n = val / 10;
-                    tmp[p--] = '0' + (val - n * 10);
-                    val = n;
-                }
-                if (negative)
-                    tmp[p--] = '-';
-                for (uint32_t i = 0; p <= 12; ++i) {
-                    tmp[i] = tmp[++p];
-                }
-                return str;
+                return intToBufferRef(v);
             },
 
             [] (const bool& v) -> BufferRef {
@@ -894,10 +996,10 @@ namespace js {
             },
 
             [] (const float& v) -> BufferRef {
-                auto val = v;
-                if (val == 0) {
-                    return V_0;
+                if (float(int(v)) == v) {
+                    return intToBufferRef(v);
                 }
+                auto val = v;
                 uint32_t p = 16;
                 int ival = val * 1000;
                 bool negative = ival < 0;
