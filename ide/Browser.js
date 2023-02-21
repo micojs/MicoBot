@@ -23,7 +23,7 @@ margin: auto;
 image-rendering: pixelated;
 }
 </style>
-<script src="assets.js"></script>
+<script src="assets.js?nc=6"></script>
 <script src="browser.js?nc=6"></script>
 <script>
 ${code}
