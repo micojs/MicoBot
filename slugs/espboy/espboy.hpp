@@ -2,6 +2,8 @@
 
 #include "ESPboyInit.h"
 #include "ESPboyLED.h"
+#include "nbSPI.h"
+
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
@@ -155,8 +157,10 @@ void loop(){
     JSupdate(now, updateDelta);
 
     {
+        uint16_t pal[ 256 ] ;
+
+        /* * /
         PGMU16 palr{palette};
-        uint16_t pal[256];
         for (int i = 0; i < 256; ++i) {
             pal[i] = palr[i];
         }
@@ -170,6 +174,30 @@ void loop(){
             myESPboy.tft.pushPixels(scanline, TFT_WIDTH);
         }
         myESPboy.tft.endWrite();
+
+        /*/
+
+        memcpy(pal, palette, sizeof(pal));
+        uint16_t scanline[2][TFT_WIDTH];
+        auto f = framebuffer;
+        for (uint32_t i = 0; i < TFT_HEIGHT; i++) {
+            auto s = scanline[i & 1];
+            for (uint32_t j = 0; j < TFT_WIDTH;) {
+                s[j] = pal[ f[j] ]; j++;
+                s[j] = pal[ f[j] ]; j++;
+                s[j] = pal[ f[j] ]; j++;
+                s[j] = pal[ f[j] ]; j++;
+                s[j] = pal[ f[j] ]; j++;
+                s[j] = pal[ f[j] ]; j++;
+                s[j] = pal[ f[j] ]; j++;
+                s[j] = pal[ f[j] ]; j++;
+            }
+            while (nbSPI_isBusy());
+            nbSPI_writeBuffer((uint32_t*)s, 4);
+            f += TFT_WIDTH;
+        }
+
+        /* */
     }
     FRAMETIME = uint32_t{millis() - startUpdate};
 }
@@ -255,7 +283,7 @@ js::Local setFont(js::Local& args, bool) {
 }
 
 template<bool mirror, bool transparent, bool recolor>
-void P_P(const uint8_t* src, uint8_t* dest, uint32_t cnt) {
+IRAM_ATTR void P_P(const uint8_t* src, uint8_t* dest, uint32_t cnt) {
     // if (!mirror && !transparent && !recolor && cnt > 4) {
     //     auto misalign = 4 - (reinterpret_cast<intptr_t>(src) & 3);
     //     memcpy_P(dest + misalign, src + misalign, cnt - misalign);

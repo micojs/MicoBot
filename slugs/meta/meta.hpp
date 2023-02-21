@@ -17,6 +17,11 @@ inline constexpr uint16_t colorFromRGB(uint8_t R, uint8_t G, uint8_t B){
 #undef abs
 #undef round
 
+// #define FIXED_POINTS_USE_NAMESPACE
+// #define FIXED_POINTS_NO_RANDOM
+// #include "../FixedPoints/FixedPoints.h"
+// #define FLOAT FixedPoints::SFixed<23, 8>
+
 #include "js.hpp"
 #include "general.hpp"
 
@@ -187,21 +192,25 @@ void loop() {
     // vsgl::clear();
 
     {
-        js::Profiler prof("js");
+        PROFILER_NAMED("js");
         JSupdate(now, updateDelta);
     }
 
     #if ENABLE_PROFILER != 0
     {
         char tmp[32];
-        snprintf(tmp, sizeof(tmp), "%d %d %d %d %d %d %s",
-                 js::gcCount, js::freeCount, js::recycleCount, js::heapSize,
-                 updateDelta, 1000 / js::to<int32_t>(FRAMETIME),
-                 profilerSample
-            );
+        snprintf(tmp, sizeof(tmp), "%d %d %s", int(js::heapSize), int(1000 / js::to<int32_t>(FRAMETIME)), profilerSample);
+
+        // snprintf(tmp, sizeof(tmp), "%d %d %d %d %d %d %s",
+        //          js::gcCount, js::freeCount, js::recycleCount, js::heapSize,
+        //          updateDelta, 1000 / js::to<int32_t>(FRAMETIME),
+        //          profilerSample
+        //     );
+
         js::recycleCount = 0;
         js::gcCount = 0;
         js::freeCount = 0;
+
         auto oldPen = vsgl::pen;
         vsgl::pen = 0;
         vsgl::text(tmp, 0, 110);
@@ -210,7 +219,7 @@ void loop() {
     #endif
 
     {
-        js::Profiler prof("draw");
+        PROFILER_NAMED("flush");
 
         gb.tft.setAddrWindow(0, 0, 160 - 1, 128 - 1);
         gb.tft.dataMode();
@@ -316,6 +325,8 @@ inline const uint8_t* texture;
 inline js::Local setTexture(js::Local& args, bool) {
     if (auto ref = std::get_if<js::ResourceRef*>(&js::get(args, V_0))) {
         texture = ((const uint8_t*) *ref);
+    } else {
+        texture = nullptr;
     }
     return {};
 }
@@ -379,7 +390,8 @@ inline js::Local rect(js::Local& args, bool) {
     return {};
 }
 
-inline js::Local image(js::Local& args, bool) {
+OPT_FAST inline js::Local image(js::Local& args, bool) {
+    PROFILER;
     auto argc = js::to<uint32_t>(get(args, V_length));
     switch (argc) {
     case 0:
@@ -412,7 +424,7 @@ inline js::Local image(js::Local& args, bool) {
             texture,
             js::to<int32_t>(js::get(args, V_1)),
             js::to<int32_t>(js::get(args, V_2)),
-            js::to<float>(js::get(args, V_3)), 1.0f,
+            (float) js::to<js::Float>(js::get(args, V_3)), 1.0f,
             mirrored, flipped, transparent);
         break;
 
@@ -423,8 +435,8 @@ inline js::Local image(js::Local& args, bool) {
             texture,
             js::to<int32_t>(js::get(args, V_1)),
             js::to<int32_t>(js::get(args, V_2)),
-            js::to<float>(js::get(args, V_3)),
-            js::to<float>(js::get(args, V_4)),
+            (float) js::to<js::Float>(js::get(args, V_3)),
+            (float) js::to<js::Float>(js::get(args, V_4)),
             mirrored, flipped, transparent);
         break;
     }
@@ -432,6 +444,7 @@ inline js::Local image(js::Local& args, bool) {
 }
 
 inline js::Local text(js::Local& args, bool) {
+    PROFILER;
     auto str = js::toString(js::get(args, V_0));
     auto x = js::to<int32_t>(js::get(args, V_1));
     auto y = js::to<int32_t>(js::get(args, V_2));

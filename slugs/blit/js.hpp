@@ -39,15 +39,29 @@
 #define V_4747new js::BufferRef{}
 #endif
 
+#ifndef FLOAT
+#define FLOAT float
+#endif
+
+#ifndef ENABLE_PROFILER
 #define ENABLE_PROFILER 0
+#endif
 
 #if ENABLE_PROFILER
-#define PROFILER js::Profiler _profiler(__func__)
+#define PROFILER js::Profiler _profiler(__func__);
+#define PROFILER_NAMED(name) js::Profiler _profiler(name);
 #else
-#define PROFILER 0
+#define PROFILER
+#define PROFILER_NAMED(name)
+#endif
+
+#ifndef OPT_FAST
+#define OPT_FAST __attribute__((optimize("-O3")))
 #endif
 
 namespace js {
+    using Float = FLOAT;
+
     struct Buffer;
     class Object;
     class Local;
@@ -82,12 +96,19 @@ namespace js {
         printf("dbg");
     }
 
+    inline void gc();
+
     inline void* aligned_malloc(size_t size) {
         PROFILER;
         if (size & 3) {
             size += 4 - (size & 3);
         }
-        return new uint32_t[size >> 2];
+        auto ptr = new uint32_t[size >> 2];
+        if (!ptr) {
+            gc();
+            ptr = new uint32_t[size >> 2];
+        }
+        return ptr;
         // auto ret = reinterpret_cast<uint8_t*>(malloc(size + 4)) + 1;
         // auto off = 4 - (reinterpret_cast<uintptr_t>(ret) & 3);
         // if (off == 4)
@@ -121,8 +142,7 @@ namespace js {
     template<class ... Ts> Overload(Ts...) -> Overload<Ts...>;
 
 
-    inline uint32_t hash(const char* ptr) {
-        PROFILER;
+    constexpr inline uint32_t hash(const char* ptr) {
         uint32_t v1 = 5381, v2 = 2166136261, v3 = 0;
 
         auto cursor = ptr;
@@ -154,7 +174,7 @@ namespace js {
         // return acc;
     }
 
-    inline constexpr uint32_t nextPOT(uint32_t o) {
+    OPT_FAST inline constexpr uint32_t nextPOT(uint32_t o) {
         uint32_t s = o;
         s |= s >> 16;
         s |= s >> 8;
@@ -229,7 +249,7 @@ namespace js {
             return reinterpret_cast<uint8_t*>(buffer + 1);
         }
 
-        bool operator == (const BufferRef& other) const {
+        OPT_FAST bool operator == (const BufferRef& other) const {
             PROFILER;
             if (buffer == other.buffer)
                 return true;
@@ -261,14 +281,14 @@ namespace js {
             return *this;
         }
 
-        void hold() {
+        OPT_FAST void hold() {
             PROFILER;
             if (buffer && buffer->refCount) {
                 buffer->refCount++;
             }
         }
 
-        void release() {
+        OPT_FAST void release() {
             PROFILER;
             if (buffer && buffer->refCount) {
                 buffer->refCount--;
@@ -287,6 +307,7 @@ namespace js {
 
     struct ResourceRef;
 
+/* */
     using Tagged = std::variant<
         Undefined,      // 0
         Object*,        // 1
@@ -296,8 +317,40 @@ namespace js {
         int32_t,        // 5
         uint32_t,       // 6
         bool,           // 7
-        float           // 8
+        Float           // 8
         >;
+/*/
+    class Tagged {
+    public:
+        enum class Type {
+            UNDEFINED,
+            OBJECTREF,
+            FUNCTION,
+            RESOURCE,
+            BUFFERREF,
+            INT32,
+            UINT32,
+            BOOL,
+            FLOAT
+        };
+
+    private:
+        Type currentType = Type::UNDEFINED;
+
+        union {
+            Object* object;
+            RawFunction function;
+            ResourceRef* resource;
+            BufferRef buffer;
+            uint32_t integer;
+            Float number;
+        } data;
+
+    public:
+        Tagged() = default;
+        Tagged(const Tagged& other) : currentType{other.currentType}, data{other.data} {}
+    };
+/* */
 
     inline const char* tagType(const Tagged& val) {
         PROFILER;
@@ -350,7 +403,7 @@ namespace js {
             Frozen
         };
 
-        Object(uint32_t bucketCount) : _bucketCount{bucketCount} {
+        OPT_FAST Object(uint32_t bucketCount) : _bucketCount{bucketCount} {
             PROFILER;
             auto list = getObjectList(bucketCount);
             // printf("add to ol%d\n", list);
@@ -366,7 +419,7 @@ namespace js {
             }
         }
 
-        ~Object() {
+        OPT_FAST ~Object() {
             PROFILER;
             auto list = getObjectList(_bucketCount);
             // printf("del from ol%d\n", list);
@@ -382,7 +435,7 @@ namespace js {
             }
         }
 
-        void clear() {
+        OPT_FAST void clear() {
             PROFILER;
             flags = 0;
             mark = 0;
@@ -401,8 +454,8 @@ namespace js {
         void release() {
             PROFILER;
             rootRefCount--;
-            if (int(rootRefCount) < 0)
-                debug();
+            // if (int16_t(rootRefCount) < 0)
+            //     debug();
         }
 
         uint32_t isRooted() {
@@ -476,21 +529,21 @@ namespace js {
             }
         };
 
-        static constexpr uint32_t getTotalSize(uint32_t bucketCount) {
+        OPT_FAST static constexpr uint32_t getTotalSize(uint32_t bucketCount) {
             uint32_t size = sizeof(Object);
             size += (bucketCount) * sizeof(Bucket);
             auto pot = nextPOT(size);
             return pot;
         }
 
-        static constexpr uint32_t getObjectList(uint32_t bucketCount) {
+        OPT_FAST static constexpr uint32_t getObjectList(uint32_t bucketCount) {
             auto size = getTotalSize(bucketCount);
             auto index = uint32_t(ctz(size) - ctz(minObjectSize));
             auto limit = sizeof(objectList)/sizeof(objectList[0]) - 1;
             return index > limit ? limit : index;
         }
 
-        static iterator erase(iterator it) {
+        OPT_FAST static iterator erase(iterator it) {
             PROFILER;
             if (!it)
                 return {};
@@ -604,8 +657,19 @@ namespace js {
         }
     };
 
-    inline Tagged* set(Tagged& container, const BufferRef& key, const Tagged& val) {
-        PROFILER;
+    template<typename T>
+    bool has(const Local& v) {
+        // PROFILER;
+        return v.data.index() == Tagged{T{}}.index();
+    }
+
+    template<typename L, typename R>
+    bool has(const R& t) {
+        return std::is_same_v<L, R>;
+    }
+
+    OPT_FAST inline Tagged* set(Tagged& container, const BufferRef& key, const Tagged& val) {
+        // PROFILER;
         auto ptr = std::get_if<Object*>(&container);
         if (!ptr || !*ptr)
             return nullptr;
@@ -651,12 +715,12 @@ namespace js {
         return nullptr;
     }
 
-    inline Tagged* set(Tagged& container, const Tagged& key, const Tagged& val) {
+    OPT_FAST inline Tagged* set(Tagged& container, const Tagged& key, const Tagged& val) {
         return set(container, toString(key), val);
     }
 
-    inline Tagged* getTaggedPtr(Object* objptr, const BufferRef& key, bool recursive = false) {
-        PROFILER;
+    OPT_FAST inline Tagged* getTaggedPtr(Object* objptr, const BufferRef& key, bool recursive = false, bool force = false) {
+        // PROFILER;
         if (!objptr) {
             // PRINT("Null object lookup");
             // PRINTLN();
@@ -673,12 +737,14 @@ namespace js {
         if (!h)
             h = key->hash = hash((const char*)key.data());
 
+        Bucket* candidate = nullptr;
         uint32_t pos = h % bucketCount;
         for (uint32_t i = 0; i < bucketCount; ++i) {
             auto& bucket = buckets[pos++];
             if (pos == bucketCount)
                 pos = 0;
             if (!bucket.key) {
+                candidate = &bucket;
                 break;
             }
             if (bucket.key == key) {
@@ -695,7 +761,9 @@ namespace js {
                     // PRINT("Proto lookup for ");
                     // PRINT(key.data());
                     // PRINTLN();
-                    return getTaggedPtr(*objptr, key, true);
+                    if (auto found = getTaggedPtr(*objptr, key, true)) {
+                        return found;
+                    }
                 }
             } else {
                 // PRINT("No Proto ");
@@ -709,27 +777,69 @@ namespace js {
             // PRINTLN();
         }
 
+        if (force && candidate) {
+            candidate->key = key;
+            candidate->value = {};
+            return &candidate->value;
+        }
+
         return nullptr;
     }
 
-    inline Tagged& get(const Tagged& container, const BufferRef& key) {
-        PROFILER;
-        static Tagged undef;
-        auto object = std::get_if<Object*>(&container);
-        if (object && *object) {
-            if (auto ptr = getTaggedPtr(*object, key, true))
-                return {*ptr};
+    inline Local strCharCodeAt(Local& args, bool);
+    inline Local arrIndexOf(Local& args, bool);
+
+    static inline Tagged undef;
+
+    OPT_FAST inline Tagged& get(const BufferRef& str, const BufferRef& key) {
+        switch (key->hash) {
+        case hash("length"):
+            undef = (int32_t) strlen(reinterpret_cast<const char*>(str.data()));
+            break;
+        case hash("charCodeAt"):
+            undef = strCharCodeAt;
+            break;
+        default:
+            undef = {};
+            break;
         }
-        auto str = std::get_if<BufferRef>(&container);
-        if (str && *str && key == V_length) {
-            undef = (int32_t) strlen(reinterpret_cast<const char*>((*str).data()));
+        return undef;
+    }
+
+    OPT_FAST inline Tagged& get(const Tagged& container, const BufferRef& key) {
+        // PROFILER;
+        auto object = std::get_if<Object*>(&container);
+        const BufferRef* str = nullptr;
+        if (object && *object) {
+            if ((*object)->isString()) {
+                auto ptr = getTaggedPtr(*object, V_buffer);
+                str = std::get_if<BufferRef>(&*ptr);
+            } else {
+                if ((*object)->isArray()) {
+                    switch (key->hash) {
+                    case hash("indexOf"):
+                        undef = arrIndexOf;
+                        return undef;
+                    default:
+                        break;
+                    }
+                }
+                if (auto ptr = getTaggedPtr(*object, key, true)) {
+                    return {*ptr};
+                }
+            }
+        } else {
+            str = std::get_if<BufferRef>(&container);
+        }
+        if (str && *str) {
+            return get(*str, key);
         } else {
             undef = {};
         }
         return undef;
     }
 
-    inline Tagged& get(const Tagged& container, uint32_t key) {
+    OPT_FAST inline Tagged& get(const Tagged& container, uint32_t key) {
         static Tagged undef;
         undef = {};
 
@@ -767,7 +877,7 @@ namespace js {
         return undef;
     }
 
-    inline Tagged& get(const Tagged& container, const Tagged& key) {
+    OPT_FAST inline Tagged& get(const Tagged& container, const Tagged& key) {
         Tagged* ret = nullptr;
         Overload {
             [&](Undefined){ret = &(get(container, V_undefined));},
@@ -778,12 +888,12 @@ namespace js {
             [&](const int32_t& a){ret = &(a > 0 ? get(container, a) : get(container, toString(a)));},
             [&](const uint32_t& a){ret = &(get(container, a));},
             [&](const bool& a){ret = &(get(container, a ? V_true : V_false));},
-            [&](const float& v){ret = &(float(int(v)) == v && v > 0 ? get(container, uint32_t(v)) : get(container, toString(v)));}
+            [&](const Float& v){ret = &(Float(int32_t(v)) == v && v > 0 ? get(container, int32_t(v)) : get(container, toString(v)));}
         }(key);
         return *ret;
     }
 
-    inline void gc() {
+    OPT_FAST inline void gc() {
         PROFILER;
         gcCount++;
         markGen++;
@@ -818,14 +928,12 @@ namespace js {
         }
     }
 
-    inline Local alloc(uint32_t propCount, const Tagged& proto = {}) {
+    OPT_FAST inline Local alloc(uint32_t propCount, const Tagged& proto = {}) {
         PROFILER;
         auto hasProto = proto.index() != Tagged{}.index();
         if (hasProto)
             propCount++;
 
-        auto size = Object::getTotalSize(propCount);
-        auto adjustedCount = (size - sizeof(Object)) / sizeof(Bucket);
         auto list = Object::getObjectList(propCount);
 
         Local ret;
@@ -835,29 +943,35 @@ namespace js {
                 ret = &*it;
                 it->clear();
                 recycleCount++;
-                // printf("recycled\n");
-                break;
+                goto found;
             }
         }
 
-        if (has<Undefined>(ret)) {
+        {
+            auto size = Object::getTotalSize(propCount);
+            auto adjustedCount = (size - sizeof(Object)) / sizeof(Bucket);
             heapSize += size;
             if (heapSize > maxHeapSize)
                 gc();
             auto raw = aligned_malloc(size);
             ret = new (raw) Object(adjustedCount);
-            // printf("created\n");
         }
 
+        found:;
         if (hasProto) {
             set(ret, V___proto__, proto);
         }
         return ret;
     }
 
-    inline BufferRef allocBuffer(uint32_t size) {
+    OPT_FAST inline BufferRef allocBuffer(uint32_t size) {
         PROFILER;
-        gc();
+        static int forceGC = 20;
+        if (!--forceGC) {
+            forceGC = 20;
+            gc();
+        }
+
         auto raw = aligned_malloc(nextPOT(sizeof(Buffer) + size));
         auto buffer = new (raw) Buffer();
         buffer->refCount = 0;
@@ -875,7 +989,7 @@ namespace js {
         return str;
     }
 
-    inline BufferRef intToBufferRef(const int32_t& v) {
+    OPT_FAST inline BufferRef intToBufferRef(const int32_t& v) {
         auto val = v;
         switch (val) {
         case 0: return V_0;
@@ -995,13 +1109,13 @@ namespace js {
                 return val ? V_true : V_false;
             },
 
-            [] (const float& v) -> BufferRef {
-                if (float(int(v)) == v) {
-                    return intToBufferRef(v);
+            [] (const Float& v) -> BufferRef {
+                if (Float(int32_t(v)) == v) {
+                    return intToBufferRef(int32_t(v));
                 }
                 auto val = v;
                 uint32_t p = 16;
-                int ival = val * 1000;
+                int ival = int32_t(val * 1000);
                 bool negative = ival < 0;
                 if (negative)
                     ival = -ival;
@@ -1059,6 +1173,12 @@ namespace js {
     template <typename Type>
     Type to(const Tagged& l) { static_assert(std::holds_alternative<Type>(l)); return {};}
 
+    template <typename Type>
+    Type to(const Local& l) { return to<Type>(l.data); }
+
+    template <typename Type>
+    Type to(const Type& t) { return t; }
+
     template <>
     inline Object* to<Object*>(const Tagged& l) {
         auto ptr = std::get_if<Object*>(&l);
@@ -1066,17 +1186,17 @@ namespace js {
     }
 
     template <>
-    inline float to<float>(const Tagged& l) {
+    inline Float to<Float>(const Tagged& l) {
         return Overload {
-            [](Undefined) -> float {return 0.0f;},
-            [](Object*) -> float {return 0.0f;},
-            [](ResourceRef*) -> float {return 0.0f;},
-            [](const RawFunction&) -> float {return 0.0f;},
-            [](const BufferRef&) -> float {return 0.0f;},
-            [](const int32_t& a) -> float {return a;},
-            [](const uint32_t& a) -> float {return a;},
-            [](const bool& a) -> float {return a ? 1.0f : 0.0f;},
-            [](const float& v) -> float {return v;}
+            [](Undefined) -> Float {return 0.0f;},
+            [](Object*) -> Float {return 0.0f;},
+            [](ResourceRef*) -> Float {return 0.0f;},
+            [](const RawFunction&) -> Float {return 0.0f;},
+            [](const BufferRef&) -> Float {return 0.0f;},
+            [](const int32_t& a) -> Float {return a;},
+            [](const uint32_t& a) -> Float {return a;},
+            [](const bool& a) -> Float {return a ? 1.0f : 0.0f;},
+            [](const Float& v) -> Float {return v;}
         }(l);
     }
 
@@ -1091,7 +1211,7 @@ namespace js {
             [](const int32_t& a) -> int32_t {return a;},
             [](const uint32_t& a) -> int32_t {return a;},
             [](const bool& a) -> int32_t {return a;},
-            [](const float& v) -> int32_t {return v;}
+            [](const Float& v) -> int32_t {return int32_t(v);}
         }(l);
     }
 
@@ -1106,7 +1226,7 @@ namespace js {
             [](const int32_t& a) -> uint32_t {return a;},
             [](const uint32_t& a) -> uint32_t {return a;},
             [](const bool& a) -> uint32_t {return a;},
-            [](const float& v) -> uint32_t {return v;}
+            [](const Float& v) -> uint32_t {return int32_t(v);}
         }(l);
     }
 
@@ -1121,7 +1241,7 @@ namespace js {
             [](const int32_t& a){return !!a;},
             [](const uint32_t& a){return !!a;},
             [](const bool& a){return a;},
-            [](const float& v){return v != 0.0f;}
+            [](const Float& v){return v != 0.0f;}
         }(l);
     }
 
@@ -1130,16 +1250,20 @@ namespace js {
         return toString(l);
     }
 
-    inline void op_mul(Local& out, const Tagged& left, const Tagged& right) {
-        if (has<float>(left) || has<float>(right)) {
-            out = to<float>(left) * to<float>(right);
-        } else {
-            out = to<int32_t>(left) * to<int32_t>(right);
-        }
+    template<typename OUT, typename LEFT, typename RIGHT>
+    inline void op_mul(OUT& out, const LEFT& left, const RIGHT& right) {
+        out = to<OUT>(left) * to<OUT>(right);
     }
 
-    inline void op_mod(Local& out, const Tagged& left, const Tagged& right) {
-        out = to<int32_t>(left) % to<int32_t>(right);
+    template<typename OUT, typename LEFT, typename RIGHT>
+    inline void op_mod(OUT& out, const LEFT& left, const RIGHT& right) {
+        if constexpr (std::is_integral_v<OUT>) {
+            out = to<OUT>(left) % to<OUT>(right);
+        } else {
+            auto a = to<Float>(left);
+            auto n = to<Float>(right);
+            out = a - floor((float) (a / n)) * n;
+        }
     }
 
     inline Local call(RawFunction func, Local& args, bool isNew) {
@@ -1177,103 +1301,84 @@ namespace js {
         }
     }
 
-    inline void op_div(Local& out, const Tagged& left, const Tagged& right) {
-        out = to<float>(left) / to<float>(right);
+    template<typename OUT, typename LEFT, typename RIGHT>
+    inline void op_div(OUT& out, const LEFT& left, const RIGHT& right) {
+        out = to<OUT>(left) / to<OUT>(right);
     }
 
-    inline void op_sub(Local& out, const Tagged& left, const Tagged& right) {
-        out = to<float>(left) - to<float>(right);
+    template<typename OUT, typename LEFT, typename RIGHT>
+    inline void op_sub(OUT& out, const LEFT& left, const RIGHT& right) {
+        out = to<OUT>(left) - to<OUT>(right);
     }
 
-    inline void op_or(Local& out, const Tagged& left, const Tagged& right) {
-        out = to<int32_t>(left) | to<int32_t>(right);
+    template<typename OUT, typename LEFT, typename RIGHT>
+    inline void op_or(OUT& out, const LEFT& left, const RIGHT& right) {
+        out = to<OUT>(left) | to<OUT>(right);
     }
 
-    inline void op_and(Local& out, const Tagged& left, const Tagged& right) {
-        out = to<int32_t>(left) & to<int32_t>(right);
+    template<typename OUT, typename LEFT, typename RIGHT>
+    inline void op_and(OUT& out, const LEFT& left, const RIGHT& right) {
+        out = to<OUT>(left) & to<OUT>(right);
     }
 
-    inline void op_xor(Local& out, const Tagged& left, const Tagged& right) {
-        out = to<int32_t>(left) ^ to<int32_t>(right);
+    template<typename OUT, typename LEFT, typename RIGHT>
+    inline void op_xor(OUT& out, const LEFT& left, const RIGHT& right) {
+        out = to<OUT>(left) ^ to<OUT>(right);
     }
 
-    inline void op_shl(Local& out, const Tagged& left, const Tagged& right) {
-        out = to<int32_t>(left) << to<int32_t>(right);
+    template<typename OUT, typename LEFT, typename RIGHT>
+    inline void op_shl(OUT& out, const LEFT& left, const RIGHT& right) {
+        out = to<OUT>(left) << to<OUT>(right);
     }
 
-    inline void op_shr(Local& out, const Tagged& left, const Tagged& right) {
-        out = to<int32_t>(left) >> to<int32_t>(right);
+    template<typename OUT, typename LEFT, typename RIGHT>
+    inline void op_shr(OUT& out, const LEFT& left, const RIGHT& right) {
+        out = to<OUT>(left) >> to<OUT>(right);
     }
 
-    inline void op_sru(Local& out, const Tagged& left, const Tagged& right) {
-        out = to<uint32_t>(left) >> to<uint32_t>(right);
+    template<typename OUT, typename LEFT, typename RIGHT>
+    inline void op_sru(OUT& out, const LEFT& left, const RIGHT& right) {
+        out = uint32_t(to<OUT>(left)) >> uint32_t(to<OUT>(right));
     }
 
-    inline void op_leq(Local& out, const Tagged& left, const Tagged& right) {
-        if (has<float>(left) || has<float>(right)) {
-            out = to<float>(left) <= to<float>(right);
+    template<typename OUT>
+    inline void op_leq(OUT& out, const Tagged& left, const Tagged& right) {
+        if (has<Float>(left) || has<Float>(right)) {
+            out = to<Float>(left) <= to<Float>(right);
         } else {
             out = to<int32_t>(left) <= to<int32_t>(right);
         }
     }
 
-    inline void op_lt(Local& out, const Tagged& left, const Tagged& right) {
-        if (has<float>(left) || has<float>(right)) {
-            out = to<float>(left) < to<float>(right);
+    template<typename OUT>
+    inline void op_lt(OUT& out, const Tagged& left, const Tagged& right) {
+        if (has<Float>(left) || has<Float>(right)) {
+            out = to<Float>(left) < to<Float>(right);
         } else {
             out = to<int32_t>(left) < to<int32_t>(right);
         }
     }
 
-    inline void op_geq(Local& out, const Tagged& left, const Tagged& right) {
-        if (has<float>(left) || has<float>(right)) {
-            out = to<float>(left) >= to<float>(right);
+    template<typename OUT>
+    inline void op_geq(OUT& out, const Tagged& left, const Tagged& right) {
+        if (has<Float>(left) || has<Float>(right)) {
+            out = to<Float>(left) >= to<Float>(right);
         } else {
             out = to<int32_t>(left) >= to<int32_t>(right);
         }
     }
 
-    inline void op_gt(Local& out, const Tagged& left, const Tagged& right) {
-        if (has<float>(left) || has<float>(right)) {
-            out = to<float>(left) > to<float>(right);
+    template<typename OUT>
+    inline void op_gt(OUT& out, const Tagged& left, const Tagged& right) {
+        if (has<Float>(left) || has<Float>(right)) {
+            out = to<Float>(left) > to<Float>(right);
         } else {
             out = to<int32_t>(left) > to<int32_t>(right);
         }
     }
 
-    inline void op_eq(Local& out, const Tagged& left, const Tagged& right) {
-        if (has<Object*>(left) ||
-            has<Object*>(right) ||
-            has<BufferRef>(left) ||
-            has<BufferRef>(right)) {
-            auto l = to<BufferRef>(left);
-            auto r = to<BufferRef>(right);
-            out = l == r;
-        } else if (has<float>(left) ||
-                   has<float>(right)) {
-            out = to<float>(left) == to<float>(right);
-        } else {
-            out = to<int32_t>(left) == to<int32_t>(right);
-        }
-    }
-
-    inline void op_neq(Local& out, const Tagged& left, const Tagged& right) {
-        if (has<Object*>(left) ||
-            has<Object*>(right) ||
-            has<BufferRef>(left) ||
-            has<BufferRef>(right)) {
-            auto l = to<BufferRef>(left);
-            auto r = to<BufferRef>(right);
-            out = l != r;
-        } else if (has<float>(left) ||
-                   has<float>(right)) {
-            out = to<float>(left) != to<float>(right);
-        } else {
-            out = to<int32_t>(left) != to<int32_t>(right);
-        }
-    }
-
-    inline void op_seq(Local& out, const Tagged& left, const Tagged& right) {
+    template<typename OUT>
+    inline void op_seq(OUT& out, const Tagged& left, const Tagged& right) {
         if (left.index() != right.index()) {
             out = false;
             return;
@@ -1287,11 +1392,12 @@ namespace js {
             [&](const int32_t& left){return left == std::get<int32_t>(right);},
             [&](const uint32_t& left){return left == std::get<uint32_t>(right);},
             [&](const bool& left){return left == std::get<bool>(right);},
-            [&](const float& left){return left == std::get<float>(right);}
+            [&](const Float& left){return left == std::get<Float>(right);}
         }(left);
     }
 
-    inline void op_sneq(Local& out, const Tagged& left, const Tagged& right) {
+    template<typename OUT>
+    inline void op_sneq(OUT& out, const Tagged& left, const Tagged& right) {
         if (left.index() != right.index()) {
             out = true;
             return;
@@ -1305,79 +1411,192 @@ namespace js {
             [&](const int32_t& left){return left != std::get<int32_t>(right);},
             [&](const uint32_t& left){return left != std::get<uint32_t>(right);},
             [&](const bool& left){return left != std::get<bool>(right);},
-            [&](const float& left){return left != std::get<float>(right);}
+            [&](const Float& left){return left != std::get<Float>(right);}
         }(left);
     }
 
-    inline void op_add(Local& out, const Tagged& left, const Tagged& right) {
+    template<typename OUT>
+    inline void op_eq(OUT& out, const Tagged& left, const Tagged& right) {
+        if (left.index() == right.index()) {
+            op_seq(out, left, right);
+            return;
+        }
+
+        if (has<Undefined>(left)) {
+            auto obj = std::get_if<Object*>(&right);
+            out = (obj && *obj);
+            return;
+        }
+        if (has<Undefined>(right)) {
+            auto obj = std::get_if<Object*>(&left);
+            out = (obj && *obj);
+            return;
+        }
+
         if (has<Object*>(left) ||
             has<Object*>(right) ||
             has<BufferRef>(left) ||
             has<BufferRef>(right)) {
             auto l = to<BufferRef>(left);
             auto r = to<BufferRef>(right);
-            auto o = allocBuffer(l->size + r->size - 1);
-            strcpy((char*)o.data(), (const char*)l.data());
-            strcat((char*)o.data(), (const char*)r.data());
-            out = string(o);
-        } else if (has<float>(left) ||
-                   has<float>(right)) {
-            out = to<float>(left) + to<float>(right);
+            out = l == r;
+        } else if (has<Float>(left) ||
+                   has<Float>(right)) {
+            out = to<Float>(left) == to<Float>(right);
         } else {
-            out = to<int32_t>(left) + to<int32_t>(right);
+            out = to<int32_t>(left) == to<int32_t>(right);
         }
     }
 
-    inline void op_inc(Local& out, Tagged& src) {
-        out = src;
-        if (auto sval = std::get_if<int32_t>(&src)) {
-            src = (*sval) + 1;
+    template<typename OUT>
+    inline void op_neq(OUT& out, const Tagged& left, const Tagged& right) {
+        if (left.index() == right.index()) {
+            op_sneq(out, left, right);
+            return;
+        }
+
+        if (has<Undefined>(left)) {
+            auto obj = std::get_if<Object*>(&right);
+            out = !(obj && *obj);
+            return;
+        }
+        if (has<Undefined>(right)) {
+            auto obj = std::get_if<Object*>(&left);
+            out = !(obj && *obj);
+            return;
+        }
+
+        if (has<Object*>(left) ||
+            has<Object*>(right) ||
+            has<BufferRef>(left) ||
+            has<BufferRef>(right)) {
+            auto l = to<BufferRef>(left);
+            auto r = to<BufferRef>(right);
+            out = l != r;
+        } else if (has<Float>(left) ||
+                   has<Float>(right)) {
+            out = to<Float>(left) != to<Float>(right);
         } else {
-            src = to<float>(src) + 1;
+            out = to<int32_t>(left) != to<int32_t>(right);
         }
     }
 
-    inline void op_preinc(Local& out, Tagged& src) {
-        if (auto sval = std::get_if<int32_t>(&src)) {
-            src = (*sval) + 1;
+    template<typename OUT, typename LEFT, typename RIGHT>
+    inline void op_add(OUT& out, const LEFT& left, const RIGHT& right) {
+        if constexpr (std::is_same_v<OUT, Local> || std::is_same_v<OUT, BufferRef>) {
+            if (has<Object*>(left) ||
+                has<Object*>(right) ||
+                has<BufferRef>(left) ||
+                has<BufferRef>(right)) {
+                auto l = to<BufferRef>(left);
+                auto r = to<BufferRef>(right);
+                auto o = allocBuffer(l->size + r->size - 1);
+                strcpy((char*)o.data(), (const char*)l.data());
+                strcat((char*)o.data(), (const char*)r.data());
+                out = o; // string(o);
+            } else if constexpr (!std::is_same_v<OUT, BufferRef>) {
+                if (has<Float>(left) ||
+                    has<Float>(right)) {
+                    out = to<Float>(left) + to<Float>(right);
+                } else {
+                    out = to<int32_t>(left) + to<int32_t>(right);
+                }
+            }
         } else {
-            src = to<float>(src) + 1;
-        }
-        out = src;
-    }
-
-    inline void op_dec(Local& out, Tagged& src) {
-        out = src;
-        if (auto sval = std::get_if<int32_t>(&src)) {
-            src = (*sval) - 1;
-        } else {
-            src = to<float>(src) - 1;
+            out = to<OUT>(left) + to<OUT>(right);
         }
     }
 
-    inline void op_predec(Local& out, Tagged& src) {
-        if (auto sval = std::get_if<int32_t>(&src)) {
-            src = (*sval) - 1;
-        } else {
-            src = to<float>(src) - 1;
-        }
-        out = src;
+    template<typename OUT, typename SRC>
+    inline void op_inc(OUT& out, SRC& src) {
+        out = to<OUT>(src);
+        src = out + 1;
     }
 
-    inline void op_neg(Local& out, const Tagged& src) {
-        if (auto sval = std::get_if<int32_t>(&src)) {
-            out = -*sval;
-        }else {
-            out = -to<float>(src);
-        }
+    template<typename OUT, typename SRC>
+    inline void op_preinc(OUT& out, SRC& src) {
+        out = to<OUT>(src) + 1;
+        src = out;
     }
 
-    inline void op_pos(Local& out, const Tagged& src) {
-        out = to<float>(src);
+    template<typename OUT, typename SRC>
+    inline void op_dec(OUT& out, SRC& src) {
+        out = to<OUT>(src);
+        src = out - 1;
     }
 
-    inline void op_not(Local& out, const Tagged& src) {
+    template<typename OUT, typename SRC>
+    inline void op_predec(OUT& out, SRC& src) {
+        out = to<OUT>(src) - 1;
+        src = out;
+    }
+
+    template<typename OUT, typename IN>
+    inline void op_neg(OUT& out, const IN& src) {
+        out = -to<OUT>(src);
+    }
+
+    template<typename OUT, typename IN>
+    inline void op_bitnot(OUT& out, const IN& src) {
+        out = ~to<OUT>(src);
+    }
+
+    template<typename OUT, typename IN>
+    inline void op_pos(OUT& out, const IN& src) {
+        out = to<OUT>(src);
+    }
+
+    template<typename OUT, typename IN>
+    inline void op_not(OUT& out, const IN& src) {
         out = !to<bool>(src);
+    }
+
+    inline Local arrIndexOf(Local& args, bool) {
+        PROFILER;
+        auto that = get(args, V_this);
+        auto obj = std::get_if<Object*>(&that);
+        if (obj && *obj) {
+            auto objptr = *obj;
+            auto needle = get(args, 0);
+            auto buckets = objptr->buckets();
+            auto bucketCount = objptr->bucketCount();
+
+            if (!bucketCount)
+                return {-1};
+
+            Local eq;
+            for (uint32_t i = 0; i < bucketCount; ++i) {
+                auto& bucket = buckets[i];
+                if (bucket.key) {
+                    op_seq(eq, bucket.value, needle);
+                    if (std::get<bool>(eq.data) == true) {
+                        return {int32_t(bucket.key->hash)};
+                    }
+                }
+            }
+        }
+        return {-1};
+    }
+
+    inline Local strCharCodeAt(Local& args, bool) {
+        PROFILER;
+        auto that = get(args, V_this);
+        auto str = std::get_if<BufferRef>(&that);
+
+        if (!str) {
+            if (auto object = std::get_if<Object*>(&that); object && *object) {
+                auto ptr = getTaggedPtr(*object, V_buffer);
+                str = std::get_if<BufferRef>(&*ptr);
+            }
+        }
+
+        if (str && *str) {
+            if (auto index = to<uint32_t>(get(args, 0)); index < uint32_t((*str)->size - 1)) {
+                return {int32_t((*str).data()[index])};
+            }
+        }
+
+        return {};
     }
 }
 
@@ -1425,23 +1644,25 @@ inline js::Local debug(js::Local& args, bool) {
 }
 
 inline js::Local Array(js::Local& args, bool) {
+    PROFILER;
     return js::arguments(js::to<uint32_t>(get(args, V_0)));
 }
 
 inline js::Local rand(js::Local& args, bool) {
+    PROFILER;
     auto len = js::to<uint32_t>(get(args, V_length));
     auto ret = int32_t(rand());
     switch (len) {
     case 0:
-        return {ret / float(RAND_MAX)};
+        return {ret / js::Float(RAND_MAX)};
 
     case 1:
         return {ret % js::to<int32_t>(get(args, V_0))};
 
     case 2: {
-        auto a = js::to<float>(get(args, V_0));
-        auto b = js::to<float>(get(args, V_1));
-        float min, range;
+        auto a = js::to<js::Float>(get(args, V_0));
+        auto b = js::to<js::Float>(get(args, V_1));
+        js::Float min, range;
         if (a < b) {
             min = a;
             range = b - a;
@@ -1451,7 +1672,7 @@ inline js::Local rand(js::Local& args, bool) {
         } else {
             return {a};
         }
-        return {min + ret / float(RAND_MAX) * range};
+        return {min + ret / js::Float(RAND_MAX) * range};
     }
 
     case 3: {
@@ -1466,78 +1687,87 @@ inline js::Local rand(js::Local& args, bool) {
 }
 
 inline js::Local abs(js::Local& args, bool) {
+    PROFILER;
     auto& arg0 = js::get(args, V_0);
     if (auto sval = std::get_if<int32_t>(&arg0)) {
         if (*sval < 0)
             return {-*sval};
         return {*sval};
     }else{
-        return {-js::to<float>(arg0)};
+        return {-js::to<js::Float>(arg0)};
     }
 }
 
 inline js::Local floor(js::Local& args, bool) {
+    PROFILER;
     auto& arg0 = js::get(args, V_0);
     return {js::to<int32_t>(arg0)};
 }
 
 inline js::Local round(js::Local& args, bool) {
+    PROFILER;
     auto& arg0 = js::get(args, V_0);
-    return {(int32_t)(js::to<float>(arg0) + 0.5f)};
+    return {(int32_t)(float(js::to<js::Float>(arg0) + 0.5f))};
 }
 
 inline js::Local ceil(js::Local& args, bool) {
+    PROFILER;
     auto& arg0 = js::get(args, V_0);
-    return {(int32_t) ceilf(js::to<float>(arg0))};
+    return {(int32_t) ceilf(float(js::to<js::Float>(arg0)))};
 }
 
 inline js::Local cos(js::Local& args, bool) {
+    PROFILER;
     auto& arg0 = js::get(args, V_0);
-    return {(float) cosf(js::to<float>(arg0))};
+    return {(js::Float) cosf(float(js::to<js::Float>(arg0)))};
 }
 
 inline js::Local sin(js::Local& args, bool) {
+    PROFILER;
     auto& arg0 = js::get(args, V_0);
-    return {(float) sinf(js::to<float>(arg0))};
+    return {(js::Float) sinf(float(js::to<js::Float>(arg0)))};
 }
 
 inline js::Local atan2(js::Local& args, bool) {
     PROFILER;
     auto& arg0 = js::get(args, V_0);
     auto& arg1 = js::get(args, V_1);
-    return {(float) atan2f(js::to<float>(arg0), js::to<float>(arg1))};
+    return {(js::Float) atan2f(float(js::to<js::Float>(arg0)), float(js::to<js::Float>(arg1)))};
 }
 
 inline js::Local tan(js::Local& args, bool) {
+    PROFILER;
     auto& arg0 = js::get(args, V_0);
-    return {(float) tanf(js::to<float>(arg0))};
+    return {(js::Float) tanf(float(js::to<js::Float>(arg0)))};
 }
 
 inline js::Local sqrt(js::Local& args, bool) {
+    PROFILER;
     auto& arg0 = js::get(args, V_0);
-    return {(float) sqrtf(js::to<float>(arg0))};
+    return {(js::Float) sqrtf(float(js::to<js::Float>(arg0)))};
 }
 
 inline js::Local min(js::Local& args, bool) {
+    PROFILER;
     auto len = js::to<uint32_t>(get(args, V_length));
-    auto ret = js::to<float>(get(args, V_0));
+    auto ret = js::to<js::Float>(get(args, V_0));
     switch (len) {
     case 5:
         for (uint32_t i = 4; i < len; ++i) {
-            if (auto v = js::to<float>(get(args, js::toString(i))); v < ret)
+            if (auto v = js::to<js::Float>(get(args, js::toString(i))); v < ret)
                 ret = v;
         }
         [[fallthrough]];
     case 4:
-        if (auto v = js::to<float>(get(args, V_3)); v < ret)
+        if (auto v = js::to<js::Float>(get(args, V_3)); v < ret)
             ret = v;
         [[fallthrough]];
     case 3:
-        if (auto v = js::to<float>(get(args, V_2)); v < ret)
+        if (auto v = js::to<js::Float>(get(args, V_2)); v < ret)
             ret = v;
         [[fallthrough]];
     case 2:
-        if (auto v = js::to<float>(get(args, V_1)); v < ret)
+        if (auto v = js::to<js::Float>(get(args, V_1)); v < ret)
             ret = v;
         [[fallthrough]];
     case 1:
@@ -1547,25 +1777,26 @@ inline js::Local min(js::Local& args, bool) {
 }
 
 inline js::Local max(js::Local& args, bool) {
+    PROFILER;
     auto len = js::to<uint32_t>(get(args, V_length));
-    auto ret = js::to<float>(get(args, V_0));
+    auto ret = js::to<js::Float>(get(args, V_0));
     switch (len) {
     case 5:
         for (uint32_t i = 4; i < len; ++i) {
-            if (auto v = js::to<float>(get(args, js::toString(i))); v > ret)
+            if (auto v = js::to<js::Float>(get(args, js::toString(i))); v > ret)
                 ret = v;
         }
         [[fallthrough]];
     case 4:
-        if (auto v = js::to<float>(get(args, V_3)); v > ret)
+        if (auto v = js::to<js::Float>(get(args, V_3)); v > ret)
             ret = v;
         [[fallthrough]];
     case 3:
-        if (auto v = js::to<float>(get(args, V_2)); v > ret)
+        if (auto v = js::to<js::Float>(get(args, V_2)); v > ret)
             ret = v;
         [[fallthrough]];
     case 2:
-        if (auto v = js::to<float>(get(args, V_1)); v > ret)
+        if (auto v = js::to<js::Float>(get(args, V_1)); v > ret)
             ret = v;
         [[fallthrough]];
     case 1:
@@ -1575,11 +1806,12 @@ inline js::Local max(js::Local& args, bool) {
 }
 
 inline js::Local angleDifference(js::Local& args, bool) {
-    auto mod = [](float a, float n) {return a - floor(a / n) * n;};
+    PROFILER;
+    auto mod = [](js::Float a, js::Float n) {return a - floor((float) (a / n)) * n;};
 
-    auto x = js::to<float>(get(args, V_0));
-    auto y = js::to<float>(get(args, V_1));
-    auto c = js::to<float>(get(args, V_2));
+    auto x = js::to<js::Float>(get(args, V_0));
+    auto y = js::to<js::Float>(get(args, V_1));
+    auto c = js::to<js::Float>(get(args, V_2));
 
     if (c == 0)
         c = 3.1415926535897932384626433f;
@@ -1592,8 +1824,9 @@ inline js::Local angleDifference(js::Local& args, bool) {
 }
 
 inline js::Local vectorLength(js::Local& args, bool) {
+    PROFILER;
     auto len = js::to<uint32_t>(get(args, V_length));
-    auto ret = js::to<float>(get(args, V_0));
+    auto ret = js::to<js::Float>(get(args, V_0));
 
     if (len <= 1)
         return {ret};
@@ -1603,27 +1836,27 @@ inline js::Local vectorLength(js::Local& args, bool) {
     switch (len) {
     case 5:
         for (uint32_t i = 4; i < len; ++i) {
-            auto v = js::to<float>(get(args, js::toString(i)));
+            auto v = js::to<js::Float>(get(args, js::toString(i)));
             ret += v * v;
         }
     case 4:
     {
-        auto v = js::to<float>(get(args, V_3));
+        auto v = js::to<js::Float>(get(args, V_3));
         ret += v * v;
     }
     case 3:
     {
-        auto v = js::to<float>(get(args, V_2));
+        auto v = js::to<js::Float>(get(args, V_2));
         ret += v * v;
     }
     case 2:
     {
-        auto v = js::to<float>(get(args, V_1));
+        auto v = js::to<js::Float>(get(args, V_1));
         ret += v * v;
     }
     case 1:
     case 0: break;
     }
 
-    return {(float) sqrt(ret)};
+    return {(js::Float) sqrt((float)ret)};
 }

@@ -161,12 +161,28 @@ public:
             auto tmp = std::move(next);
             ref = std::move(tmp);
         }
+        static void clean() {}
+    };
+
+    template<typename Derived>
+    class CreateCommand : public Command {
+    public:
+        template<typename ... Args>
+        static std::unique_ptr<Derived> create(Args&& ... args) {
+            std::unique_ptr<Derived> ret = std::make_unique<Derived>();
+            ret->init(std::forward<Args>(args)...);
+            return ret;
+        }
     };
 
     template<typename Derived>
     class RecycleCommand : public Command {
     public:
         static inline std::unique_ptr<Derived> recycle;
+
+        static void clean() {
+            recycle.reset();
+        }
 
         void dispose(std::unique_ptr<Command>& ref) override {
             std::unique_ptr<Command> tmp = std::move(this->next);
@@ -191,13 +207,17 @@ public:
         }
     };
 
-    class TextCommand : public RecycleCommand<TextCommand> {
+    template<typename Derived>
+    using BaseCommand = RecycleCommand<Derived>;
+
+    class TextCommand : public BaseCommand<TextCommand> {
     public:
         std::string text;
-        const uint8_t* font = vsgl_t::font;
+        const uint8_t* font;
         int x;
 
-        void init(const char* text, int X, int Y) {
+        void init(const char* text, int X, int Y, const uint8_t* font) {
+            this->font = font;
             this->text = text;
             this->x = X;
             auto h = font[1];
@@ -347,22 +367,21 @@ public:
     };
 
     template<bool mirror, bool transparent, bool recolor>
-    class SpriteCommand : public Command {
+    class SpriteCommand : public BaseCommand<SpriteCommand<mirror, transparent, recolor>> {
     public:
         const uint8_t* source;
         int16_t stride, x;
         // int16_t width, add;
 
-        SpriteCommand(int x, int y, int height, const uint8_t* source, int stride, int width) :
-            source{source},
-            stride(stride),
-            x(x)
-            {
-                this->minY = y;
-                this->maxY = y + height;
-                this->A = width;
-                this->B = pen;
-            }
+        void init(int x, int y, int height, const uint8_t* source, int stride, int width) {
+            this->source = source;
+            this->stride = stride;
+            this->x = x;
+            this->minY = y;
+            this->maxY = y + height;
+            this->A = width;
+            this->B = pen;
+        }
 
         void draw(uint8_t* framebuffer, int Yoffset) override {
             auto y = int(this->minY) - Yoffset;
@@ -399,7 +418,7 @@ public:
 
     };
 
-    class RectCommand : public RecycleCommand<RectCommand> {
+    class RectCommand : public BaseCommand<RectCommand> {
     public:
         int x;
 
@@ -473,8 +492,17 @@ public:
 
     template<typename Func>
     static void draw(Func&& func) {
-        RectCommand::recycle.reset();
-        TextCommand::recycle.reset();
+        RectCommand::clean();
+        TextCommand::clean();
+        SpriteCommand<true, true, true>::clean();
+        SpriteCommand<true, false, true>::clean();
+        SpriteCommand<false, true, true>::clean();
+        SpriteCommand<false, false, true>::clean();
+        SpriteCommand<true, true, false>::clean();
+        SpriteCommand<true, false, false>::clean();
+        SpriteCommand<false, true, false>::clean();
+        SpriteCommand<false, false, false>::clean();
+
         uint8_t framebuffer[screenWidth * 8];
         for (int y = 0; y < screenHeight; y += 8) {
             if (clearColor)
@@ -498,7 +526,7 @@ public:
     }
 
     static void text(const char* text, int x, int y) {
-        push(TextCommand::create(text, x, y));
+        push(TextCommand::create(text, x, y, font));
     }
 
     static void rect(int x, int y, int w, int h) {
@@ -523,6 +551,8 @@ public:
     }
 
     static void image(const uint8_t* data, int x, int y, bool mirrored, bool flipped, bool transparent) {
+        if (!data)
+            return;
         int width = data[0];
         int height = data[1];
         int headerSize = 2;
@@ -601,29 +631,29 @@ public:
         if (pen) {
             if (mirrored) {
                 if (transparent) {
-                    push(std::make_unique<SpriteCommand<true, true, true>>(x, y, height, source, stride, width));
+                    push(SpriteCommand<true, true, true>::create(x, y, height, source, stride, width));
                 } else {
-                    push(std::make_unique<SpriteCommand<true, false, true>>(x, y, height, source, stride, width));
+                    push(SpriteCommand<true, false, true>::create(x, y, height, source, stride, width));
                 }
             } else {
                 if (transparent) {
-                    push(std::make_unique<SpriteCommand<false, true, true>>(x, y, height, source, stride, width));
+                    push(SpriteCommand<false, true, true>::create(x, y, height, source, stride, width));
                 } else {
-                    push(std::make_unique<SpriteCommand<false, false, true>>(x, y, height, source, stride, width));
+                    push(SpriteCommand<false, false, true>::create(x, y, height, source, stride, width));
                 }
             }
         } else {
             if (mirrored) {
                 if (transparent) {
-                    push(std::make_unique<SpriteCommand<true, true, false>>(x, y, height, source, stride, width));
+                    push(SpriteCommand<true, true, false>::create(x, y, height, source, stride, width));
                 } else {
-                    push(std::make_unique<SpriteCommand<true, false, false>>(x, y, height, source, stride, width));
+                    push(SpriteCommand<true, false, false>::create(x, y, height, source, stride, width));
                 }
             } else {
                 if (transparent) {
-                    push(std::make_unique<SpriteCommand<false, true, false>>(x, y, height, source, stride, width));
+                    push(SpriteCommand<false, true, false>::create(x, y, height, source, stride, width));
                 } else {
-                    push(std::make_unique<SpriteCommand<false, false, false>>(x, y, height, source, stride, width));
+                    push(SpriteCommand<false, false, false>::create(x, y, height, source, stride, width));
                 }
             }
         }

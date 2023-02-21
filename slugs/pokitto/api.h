@@ -2,6 +2,12 @@
 
 #include <cstdint>
 #include <cmath>
+
+// #define FIXED_POINTS_USE_NAMESPACE
+// #define FIXED_POINTS_NO_RANDOM
+// #include "../FixedPoints/FixedPoints.h"
+// #define FLOAT FixedPoints::SFixed<23, 8>
+
 #include "vsgl.hpp"
 #include "Pokitto.h"
 #include "assets.hpp"
@@ -29,6 +35,10 @@ inline uint32_t startTime;
 inline uint32_t updateCount = 0;
 inline uint32_t updateFrequency = 1000 / 30;
 
+#if ENABLE_PROFILER != 0
+inline const char* volatile profilerSample = "NONE2";
+#endif
+
 void init() {
     PI = 3.1415926535897932384626433f;
     HALF_PI = 3.1415926535897932384626433f / 2;
@@ -53,6 +63,7 @@ int main(){
         auto targetUpdateCount = updateFrequency ? now / updateFrequency : updateCount + 1;
         auto updateDelta = int32_t(targetUpdateCount - updateCount);
         if (updateDelta < 1) {
+            PROFILER_NAMED("updateHook");
             PC::updateHook(false);
             continue;
         }
@@ -69,19 +80,35 @@ int main(){
         DOWN = !!PC::downBtn();
         UP = !!PC::upBtn();
 
+        auto startUpdate = PC::getTime();
+        JSupdate();
+
+#if ENABLE_PROFILER != 0
         {
-            auto startUpdate = PC::getTime();
+            char tmp[32];
+            snprintf(tmp, sizeof(tmp), "%d %d %s", int(js::heapSize), int(1000 / js::to<int32_t>(FRAMETIME)), profilerSample);
 
-            JSupdate();
+            js::recycleCount = 0;
+            js::gcCount = 0;
+            js::freeCount = 0;
 
+            auto oldPen = vsgl::pen;
+            vsgl::pen = 0;
+            vsgl::text(tmp, 0, 176 - 8);
+            vsgl::pen = oldPen;
+        }
+#endif
+
+        {
+            PROFILER_NAMED("flush")
             vsgl::draw([Y=0](const uint8_t* framebuffer) mutable {
                 for (int y = 0; y < 8; ++y) {
                     flushLine(palette, framebuffer + y * 220);
                 }
             });
-
-            FRAMETIME = uint32_t{PC::getTime() - startUpdate};
         }
+
+        FRAMETIME = uint32_t{PC::getTime() - startUpdate};
     }
 }
 
@@ -147,6 +174,8 @@ inline const uint8_t* texture;
 inline js::Local setTexture(js::Local& args, bool) {
     if (auto ref = std::get_if<js::ResourceRef*>(&js::get(args, V_0))) {
         texture = ((const uint8_t*) *ref);
+    } else {
+        texture = nullptr;
     }
     return {};
 }
@@ -186,6 +215,11 @@ inline js::Local getWidth(js::Local& args, bool) {
         if (!*res)
             return {};
         return {uint32_t(((const uint8_t*)*res)[0])};
+    }
+    if (auto str = std::get_if<js::BufferRef>(&arg)) {
+        if (!str->data())
+            return {0};
+
     }
     return {LCDWIDTH};
 }
@@ -243,7 +277,7 @@ inline js::Local image(js::Local& args, bool) {
             texture,
             js::to<int32_t>(js::get(args, V_1)),
             js::to<int32_t>(js::get(args, V_2)),
-            js::to<float>(js::get(args, V_3)), 1.0f,
+            (float) js::to<js::Float>(js::get(args, V_3)), 1.0f,
             mirrored, flipped, transparent);
         break;
 
@@ -254,8 +288,8 @@ inline js::Local image(js::Local& args, bool) {
             texture,
             js::to<int32_t>(js::get(args, V_1)),
             js::to<int32_t>(js::get(args, V_2)),
-            js::to<float>(js::get(args, V_3)),
-            js::to<float>(js::get(args, V_4)),
+            (float) js::to<js::Float>(js::get(args, V_3)),
+            (float) js::to<js::Float>(js::get(args, V_4)),
             mirrored, flipped, transparent);
         break;
     }

@@ -1,6 +1,6 @@
-title: Pew pew pew
-description: A simple bullet-hell example project
-author: FManga
+title: MicoMan
+description: a Pacman esque maze game
+author: Hannu Viitala
 splash:
   file: assets/no-image.png
 icon:

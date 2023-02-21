@@ -3,7 +3,7 @@
 #define PROGMEM
 #define _MUST_UNDEF_PROGMEM 1
 #endif
-inline constexpr const uint16_t PROGMEM palette[] = {
+inline constexpr const uint16_t PROGMEM palette[] __attribute__ ((aligned (4))) = {
     colorFromRGB(255, 0, 255) /* L=NaN */,
     colorFromRGB(0, 0, 0) /* L=0 */,
     colorFromRGB(12, 12, 12) /* L=5 */,

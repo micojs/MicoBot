@@ -234,6 +234,8 @@ inline const uint8_t* texture;
 inline js::Local setTexture(js::Local& args, bool) {
     if (auto ref = std::get_if<js::ResourceRef*>(&js::get(args, V_0))) {
         texture = ((const uint8_t*) *ref);
+    } else {
+        texture = nullptr;
     }
     return {};
 }
