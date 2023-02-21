@@ -68,7 +68,7 @@ class IDE {
     }
 
     async closeProject() {
-        [...Object.values(this.#editors)].forEach(({editor}) => editor.commit());
+        [...Object.values(this.#editors)].forEach(({editor}) => editor?.commit());
         if (this.model) {
             this.model.set('previewProject', '');
             this.model.set('previewHTML', '');
