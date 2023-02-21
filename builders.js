@@ -22,7 +22,7 @@ class Builder {
     }
 
     say() {
-        this.spawn("/usr/bin/say", [this.phonetic]);
+        // this.spawn("/usr/bin/say", [this.phonetic]);
     }
 
     path(...post) {
