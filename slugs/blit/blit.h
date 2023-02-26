@@ -241,7 +241,8 @@ inline js::Local setTexture(js::Local& args, bool) {
 }
 
 inline js::Local setFPS(js::Local& args, bool) {
-
+    auto targetFPS = js::to<uint32_t>(js::get(args, V_0));
+    updateFrequency = targetFPS ? 1000 / targetFPS : 0;
     return {};
 }
 

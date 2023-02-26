@@ -261,7 +261,7 @@ inline constexpr const uint16_t PROGMEM palette[] = {
     colorFromRGB(255, 236, 188) /* L=87 */,
     colorFromRGB(237, 237, 237) /* L=93 */,
     colorFromRGB(255, 255, 255) /* L=100 */
-}
+};
 #ifdef _MUST_UNDEF_PROGMEM
 #undef PROGMEM
 #endif

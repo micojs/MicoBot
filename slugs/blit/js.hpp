@@ -307,7 +307,6 @@ namespace js {
 
     struct ResourceRef;
 
-/* */
     using Tagged = std::variant<
         Undefined,      // 0
         Object*,        // 1
@@ -319,38 +318,37 @@ namespace js {
         bool,           // 7
         Float           // 8
         >;
-/*/
-    class Tagged {
-    public:
-        enum class Type {
-            UNDEFINED,
-            OBJECTREF,
-            FUNCTION,
-            RESOURCE,
-            BUFFERREF,
-            INT32,
-            UINT32,
-            BOOL,
-            FLOAT
-        };
 
-    private:
-        Type currentType = Type::UNDEFINED;
+    // class Tagged {
+    // public:
+    //     enum class Type {
+    //         UNDEFINED,
+    //         OBJECTREF,
+    //         FUNCTION,
+    //         RESOURCE,
+    //         BUFFERREF,
+    //         INT32,
+    //         UINT32,
+    //         BOOL,
+    //         FLOAT
+    //     };
 
-        union {
-            Object* object;
-            RawFunction function;
-            ResourceRef* resource;
-            BufferRef buffer;
-            uint32_t integer;
-            Float number;
-        } data;
+    // private:
+    //     Type currentType = Type::UNDEFINED;
 
-    public:
-        Tagged() = default;
-        Tagged(const Tagged& other) : currentType{other.currentType}, data{other.data} {}
-    };
-/* */
+    //     union {
+    //         Object* object;
+    //         RawFunction function;
+    //         ResourceRef* resource;
+    //         BufferRef buffer;
+    //         uint32_t integer;
+    //         Float number;
+    //     } data;
+
+    // public:
+    //     Tagged() = default;
+    //     Tagged(const Tagged& other) : currentType{other.currentType}, data{other.data} {}
+    // };
 
     inline const char* tagType(const Tagged& val) {
         PROFILER;
