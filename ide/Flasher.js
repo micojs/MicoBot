@@ -1,7 +1,25 @@
 const {dom, index} = require('./dom.js');
 
+function save(name, data) {
+    const link = document.createElement( 'a' );
+    link.style.display = 'none';
+    document.body.appendChild( link );
+
+
+    const blob = new Blob( [ data ], { type: 'application/octet-stream' } );
+    const objectURL = URL.createObjectURL( blob );
+
+    link.href = objectURL;
+    link.href = URL.createObjectURL( blob );
+    link.download =  name;
+    link.click();
+}
+
 class Flasher {
-    constructor() {}
+    constructor(name, data) {
+        this.name = name;
+        this.data = data;
+    }
 
     log(...args) {
         postMessage({log:[args]}, '*')
@@ -56,9 +74,17 @@ class Flasher {
                                              textContent:'Flash',
                                              onclick:_=>{
                                                  root.remove();
-                                                 resolve();
+                                                 resolve('flash');
                                              }
 
+                                         }],
+                                         ['button', {
+                                             textContent:'Save',
+                                             onclick:_=>{
+                                                 root.remove();
+                                                 save(this.name, this.data);
+                                                 fail();
+                                             }
                                          }]
                                      ]]
                                  ]]

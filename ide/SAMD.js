@@ -322,18 +322,32 @@ class SAMDFlasher extends base.Flasher {
             } catch(ex) {}
         }
 
-        const port = await (navigator.serial.requestPort({}));
+        let port = await (navigator.serial.requestPort({
+            filters:[{
+                usbVendorId:0x2341,
+                usbProductId:0x804d
+            }]
+        }));
 
         let info = port.getInfo();
-        this.log('VID: 0x' + info.usbVendorId.toString(16), ' PID:0x' + info.usbProductId.toString(16));
+        console.log('FIRST VID: 0x' + info.usbVendorId.toString(16), ' PID:0x' + info.usbProductId.toString(16));
+        // console.log("FIRST", info);
 
-        // await port.open({ baudRate: 1200 });
+        await port.open({ baudRate: 1200 });
+        await new Promise(ret => setTimeout(ret, 100));
+        await port.close();
+
+        port = await (navigator.serial.requestPort({
+            filters:[{
+                usbVendorId:0x2341,
+                usbProductId:0x4d
+            }]
+        }));
         this.port = port;
-        // await new Promise(ret => setTimeout(ret, 100));
-        // await port.close();
 
-        // info = port.getInfo();
-        // this.log('VID: 0x' + info.usbVendorId.toString(16), ' PID:0x' + info.usbProductId.toString(16));
+        info = port.getInfo();
+        console.log('SECOND VID: 0x' + info.usbVendorId.toString(16), ' PID:0x' + info.usbProductId.toString(16));
+        // console.log("SECOND", info);
     }
 
     disconnect() {
@@ -343,20 +357,22 @@ class SAMDFlasher extends base.Flasher {
         this.port = null;
     }
 
-    async upload(binary, offset) {
+    async upload(offset) {
+        const binary = this.data.buffer;
+
         if (!this.port) {
             await this.showConnectPopup();
-            await this.connect();
         }
+        await this.connect();
 
         this.samba = new SamBA(this.port, {
             logger: {
                 log: this.log,
                 debug: this.log,
                 error: this.log
-            },
-            debug: true,
-            trace: true
+            }// ,
+            // debug: true,
+            // trace: true
         });
 
         const samba = this.samba;
@@ -387,15 +403,15 @@ class SAMDFlasher extends base.Flasher {
     }
 
     onProgress(progress, total) {
-        this.log("Progress: ", progress, total);
+        postMessage({build:["Uploading: " + Math.floor((progress / total) * 100) + "%"]}, '*');
     }
 }
 
-module.exports.upload = async function(offset, binary) {
+module.exports.upload = async function(offset, binary, name = "micojs") {
     window.retry = async () => {
-        const flasher = new SAMDFlasher();
-        await flasher.connect();
-        await flasher.upload(binary, offset);
+        const flasher = new SAMDFlasher(name + ".bin", new Uint8Array(binary));
+        // await flasher.connect();
+        await flasher.upload(offset);
     };
     await window.retry();
 };

@@ -37,7 +37,8 @@ class ESPBoyFlasher extends Flasher {
         }
     }
 
-    async upload(binary) {
+    async upload() {
+        const binary = this.data.buffer;
         if (!this.stub) {
             await this.showConnectPopup();
             await this.connect();
@@ -55,7 +56,7 @@ class ESPBoyFlasher extends Flasher {
     }
 }
 
-module.exports.upload = async function(binary) {
-    const flasher = new ESPBoyFlasher();
-    await flasher.upload(binary);
+module.exports.upload = async function(binary, name = "micojs") {
+    const flasher = new ESPBoyFlasher(name + ".bin", new Uint8Array(binary));
+    await flasher.upload();
 }

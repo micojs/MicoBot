@@ -12,6 +12,7 @@ const {stdlib} = require('./stdlib.js');
 const {loadExample} = require('./example.js');
 
 const ESPboy = require('./ESPBoy.js');
+const Blit = require('./Blit.js');
 const SAMD = require('./SAMD.js');
 const Browser = require('./Browser.js');
 const {PreBuild} = require('./PreBuild.js');
@@ -22,7 +23,8 @@ const {FS2Zip, Zip2FS} = require('./FS2Zip.js');
 
 const uploaders = {
     espboy:ESPboy,
-    // meta:{upload:SAMD.upload.bind(null, 0x2000)},
+    blit:Blit,
+    meta:{upload:SAMD.upload.bind(null, 0x2000)},
     metro:{upload:SAMD.upload.bind(null, 0x4000)}
 };
 
@@ -599,7 +601,7 @@ class ${fileName} {
                 if (uploader && navigator.serial) {
                     const rsp = await fetch(url);
                     if (rsp.headers.get('content-type') == "application/octet-stream") {
-                        uploader.upload(await rsp.arrayBuffer());
+                        uploader.upload(await rsp.arrayBuffer(), this.model.get('projectName'));
                     } else {
                         const errmsg = await rsp.text();
                         console.error(errmsg);

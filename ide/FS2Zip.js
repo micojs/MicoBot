@@ -24,6 +24,10 @@ module.exports.FS2Zip = async function(fs) {
     saveAs(content, "micojs-project.zip");
 };
 
+function getFileExtension(name) {
+    return (name.match(/\.[^./\\]+$/) || [""])[0];
+}
+
 module.exports.Zip2FS = async function(fr, fs) {
     const zip = await JSZip.loadAsync(fr.result);
     const promises = [];
@@ -41,7 +45,7 @@ module.exports.Zip2FS = async function(fr, fs) {
         promises.push(new Promise((resolve) => {ready = resolve;}));
 
         let contents;
-        const extension = (file.name.match(/\.[^./\\]+$/) || [""])[0];
+        const extension = getFileExtension(file.name);
         const mime = getMimeType(extension);
         if (mime.indexOf('text') != -1 || mime == 'application/javascript' || mime == 'application/json' || extension == '.meta') {
             contents = await zip.file(file.name).async('string');
@@ -68,7 +72,11 @@ module.exports.Zip2FS = async function(fr, fs) {
     }
 };
 
+module.exports.getMimeType = getMimeType;
+
 function getMimeType(ext) {
+    ext = getFileExtension(ext).toLowerCase();
+
     return ({
 	".123"			: "application/vnd.lotus-1-2-3",
 	".3dml"			: "text/vnd.in3d.3dml",
@@ -369,6 +377,7 @@ function getMimeType(ext) {
 	".jpm"			: "video/jpm",
 	".js"			: "application/javascript",
 	".json"			: "application/json",
+	".tmj"			: "application/json",
 	".kar"			: "audio/midi",
 	".karbon"		: "application/vnd.kde.karbon",
 	".kfo"			: "application/vnd.kde.kformula",
