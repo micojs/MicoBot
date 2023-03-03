@@ -16,6 +16,7 @@ const SAMD = require('./SAMD.js');
 const Browser = require('./Browser.js');
 const {PreBuild} = require('./PreBuild.js');
 const {ImageEditor} = require('./ImageEditor.js');
+const {TileMapEditor} = require('./TileMapEditor.js');
 // const {MusicEditor} = require('./MusicEditor.js');
 const {FS2Zip, Zip2FS} = require('./FS2Zip.js');
 
@@ -319,6 +320,10 @@ class IDE {
 
         raw(parentElement, path, contents) {
 
+        },
+
+        tmj(parentElement, path, contents) {
+            return new TileMapEditor(parentElement, path, contents, this.#fs);
         },
 
         png(parentElement, path, contents) {
