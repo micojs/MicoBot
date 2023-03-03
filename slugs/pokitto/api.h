@@ -14,7 +14,7 @@
 #include <LibLog>
 #include "js.hpp"
 
-using vsgl = vsgl_t<220, 176>;
+using vsgl = vsgl_t<220, 176, 16>;
 using PC = Pokitto::Core;
 using PD = Pokitto::Display;
 
@@ -102,7 +102,7 @@ int main(){
         {
             PROFILER_NAMED("flush")
             vsgl::draw([Y=0](const uint8_t* framebuffer) mutable {
-                for (int y = 0; y < 8; ++y) {
+                for (int y = 0; y < 16; ++y) {
                     flushLine(palette, framebuffer + y * 220);
                 }
             });
