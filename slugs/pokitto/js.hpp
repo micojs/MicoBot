@@ -369,7 +369,8 @@ namespace js {
     template<typename T>
     bool has(const Tagged& v) {
         PROFILER;
-        return v.index() == Tagged{T{}}.index();
+        static int t = Tagged{T{}}.index();
+        return v.index() == t;
     }
 
     BufferRef toString(const Tagged& val);
@@ -1140,33 +1141,43 @@ namespace js {
 
     inline Local arguments(uint32_t len) {
         PROFILER;
-        auto args = alloc(len + 2);
-        if (!args.object()) {
-            PRINT("NULL ALLOC");
-            PRINTLN();
+        static uint32_t prevlen = ~uint32_t{};
+        static Local prev{};
+        if (auto obj = prev.object(); obj && obj->rootRefCount == 1 && prevlen == len) {
+            // if (prevlen > len)
+            //     set(prev, V_length, len);
+            return prev;
+        } else {
+            auto args = alloc(len + 2);
+            prev = args;
+            prevlen = len;
+            if (!prev.object()) {
+                PRINT("NULL ALLOC");
+                PRINTLN();
+            }
+            args.object()->setFlagArray();
+            set(args, V_length, len);
+            return args;
         }
-        args.object()->setFlagArray();
-        set(args, V_length, len);
-        return args;
     }
 
-    inline Local string(const BufferRef& ref) {
-        PROFILER;
-        // static Local strProto = ([]{
-        //         auto ret = alloc(1);
-        //         return ret;
-        //     })();
-        auto str = alloc(2);
-        str.object()->setFlagString();
-        set(str, V_buffer, ref);
-        auto data = reinterpret_cast<const char*>(ref.data());
-        set(str, V_length, (int) (data ? strlen(data) : 0));
-        return str;
-    }
+    // inline Local string(const BufferRef& ref) {
+    //     PROFILER;
+    //     // static Local strProto = ([]{
+    //     //         auto ret = alloc(1);
+    //     //         return ret;
+    //     //     })();
+    //     auto str = alloc(2);
+    //     str.object()->setFlagString();
+    //     set(str, V_buffer, ref);
+    //     auto data = reinterpret_cast<const char*>(ref.data());
+    //     set(str, V_length, (int) (data ? strlen(data) : 0));
+    //     return str;
+    // }
 
-    inline Local string(uint32_t index) {
-        return string(BufferRef{stringTable[index]});
-    }
+    // inline Local string(uint32_t index) {
+    //     return string(BufferRef{stringTable[index]});
+    // }
 
     template <typename Type>
     Type to(const Tagged& l) { static_assert(std::holds_alternative<Type>(l)); return {};}
