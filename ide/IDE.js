@@ -349,7 +349,14 @@ class IDE {
             return;
         }
 
-        let contents = this.#fs.readFile(path);
+        let contents = false;
+
+        try {
+            contents = this.#fs.readFile(path);
+        } catch (ex) {
+            console.warn(ex);
+        }
+
         if (contents === false)
             return;
 
