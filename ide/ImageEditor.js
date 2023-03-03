@@ -41,11 +41,11 @@ class ImageEditor {
                 ['img', {id:'img', src:image, onload:this.onload.bind(this)}]
             ]],
             ['div', {id:'sidebar'}, [
-                ['select', {id:'mode', onchange:this.changeMeta.bind(this)}, [
-                    ['option', {value:'image', textContent:'image'}],
-                    ['option', {value:'tilemap', textContent:'tilemap'}],
-                    ['option', {value:'tileset', textContent:'tileset'}]
-                ]],
+                // ['select', {id:'mode', onchange:this.changeMeta.bind(this)}, [
+                //     ['option', {value:'image', textContent:'image'}],
+                //     ['option', {value:'tilemap', textContent:'tilemap'}],
+                //     ['option', {value:'tileset', textContent:'tileset'}]
+                // ]],
                 [{id:'imageSidebar'}, [
                     [{className:'row'}, [
                         ['span', {textContent:'Width:'}],
@@ -56,33 +56,33 @@ class ImageEditor {
                         ['span', {id:'imgheight'}]
                     ]]
                 ]],
-                [{id:'tilemapSidebar'}, [
-                    [{className:'row'}, [
-                        ['span', {textContent:'Tile Set:'}],
-                        ['select', {id:'tileset', onchange:this.changeMeta.bind(this)}, this.getTilesets().map(path => [
-                            'option', {value:path, textContent:path.replace(/.*\/|\..*/g, '')}
-                        ])],
-                        ['button', {id:'refresh', onclick:this.refreshTileSets.bind(this), textContent:'⟳'}]
-                    ]]
-                ]],
-                [{id:'tilesetSidebar'}, [
-                    [{className:'row'}, [
-                        ['span', {textContent:'Tile Width:'}],
-                        ['input', {
-                            id:'tilewidth', type:"number", min:"8", max:"256",
-                            onchange:this.changeMeta.bind(this),
-                            value:this.metadata.tileset.tilewidth|0||8
-                        }]
-                    ]],
-                    [{className:'row'}, [
-                        ['span', {textContent:'Tile Height:'}],
-                        ['input', {
-                            id:'tileheight', type:"number", min:"8", max:"256",
-                            onchange:this.changeMeta.bind(this),
-                            value:this.metadata.tileset.tileheight|0||8
-                        }]
-                    ]]
-                ]]
+                // [{id:'tilemapSidebar'}, [
+                //     [{className:'row'}, [
+                //         ['span', {textContent:'Tile Set:'}],
+                //         ['select', {id:'tileset', onchange:this.changeMeta.bind(this)}, this.getTilesets().map(path => [
+                //             'option', {value:path, textContent:path.replace(/.*\/|\..*/g, '')}
+                //         ])],
+                //         ['button', {id:'refresh', onclick:this.refreshTileSets.bind(this), textContent:'⟳'}]
+                //     ]]
+                // ]],
+                // [{id:'tilesetSidebar'}, [
+                //     [{className:'row'}, [
+                //         ['span', {textContent:'Tile Width:'}],
+                //         ['input', {
+                //             id:'tilewidth', type:"number", min:"8", max:"256",
+                //             onchange:this.changeMeta.bind(this),
+                //             value:this.metadata.tileset.tilewidth|0||8
+                //         }]
+                //     ]],
+                //     [{className:'row'}, [
+                //         ['span', {textContent:'Tile Height:'}],
+                //         ['input', {
+                //             id:'tileheight', type:"number", min:"8", max:"256",
+                //             onchange:this.changeMeta.bind(this),
+                //             value:this.metadata.tileset.tileheight|0||8
+                //         }]
+                //     ]]
+                // ]]
             ]]
         ]), {}, this);
         this.#dom.tileset.value = this.metadata.tilemap.tileset;
