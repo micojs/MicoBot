@@ -181,7 +181,9 @@ inline js::Local setTexture(js::Local& args, bool) {
 }
 
 inline js::Local setFPS(js::Local& args, bool) {
-    PC::setFrameRate(js::to<uint32_t>(js::get(args, V_0)));
+    auto targetFPS = js::to<uint32_t>(js::get(args, V_0));
+    updateFrequency = targetFPS ? 1000 / targetFPS : 0;
+    // PC::setFrameRate(js::to<uint32_t>(js::get(args, V_0)));
     return {};
 }
 
