@@ -140,7 +140,13 @@ namespace ns_internal {
                                 1>::type;
 }
 
-template<int screenWidth, int screenHeight>
+struct TileSetEntry {
+    const uint8_t* image;
+    uint16_t data;
+    uint16_t stride;
+};
+
+template<int screenWidth, int screenHeight, int windowHeight = 8>
 class vsgl_t {
     static inline uint32_t usedCount = 0;
     static inline uint32_t reservedCount = 0;
@@ -230,7 +236,7 @@ public:
         void draw(uint8_t* framebuffer, int Yoffset) override {
             auto color = this->B;
             auto minY = int(this->minY) - Yoffset;
-            auto maxY = std::min<int>(this->maxY - Yoffset, 8);
+            auto maxY = std::min<int>(this->maxY - Yoffset, windowHeight);
             auto dest = framebuffer;
             int x = this->x;
 
@@ -321,7 +327,7 @@ public:
             uint32_t width = abs(int(stride)) << 16;
             uint32_t height = int(this->height) << 16;
 
-            auto maxY = std::min<int>(this->maxY - Yoffset, 8);
+            auto maxY = std::min<int>(this->maxY - Yoffset, windowHeight);
 
             auto cx = this->cx;
             auto cy = this->cy;
@@ -394,7 +400,7 @@ public:
                 y = 0;
             }
 
-            auto maxY = std::min<int>(int(this->maxY) - Yoffset, 8);
+            auto maxY = std::min<int>(int(this->maxY) - Yoffset, windowHeight);
             for (; y < maxY; ++y, source += stride, dest += screenWidth) {
                 P_P(source, dest, this->A, this->B);
             }
@@ -418,6 +424,19 @@ public:
 
     };
 
+    using SpriteCreate = std::unique_ptr<Command> (*) (int x, int y, int height, const uint8_t* source, int stride, int width);
+
+    static inline const SpriteCreate spriteCreate[] = {
+        &SpriteCommand<false, false, false>::create,
+        &SpriteCommand< true, false, false>::create,
+        &SpriteCommand<false,  true, false>::create,
+        &SpriteCommand< true,  true, false>::create,
+        &SpriteCommand<false, false, true>::create,
+        &SpriteCommand< true, false, true>::create,
+        &SpriteCommand<false,  true, true>::create,
+        &SpriteCommand< true,  true, true>::create
+    };
+
     class RectCommand : public BaseCommand<RectCommand> {
     public:
         int x;
@@ -439,7 +458,7 @@ public:
                 y = 0;
             }
 
-            auto maxY = std::min<int>(this->maxY - Yoffset, 8);
+            auto maxY = std::min<int>(this->maxY - Yoffset, windowHeight);
             auto A = this->A;
             auto B = this->B;
             for (; y < maxY; ++y, dest += screenWidth) {
@@ -453,6 +472,8 @@ public:
     static inline const uint8_t* font = nullptr;
     static inline std::unique_ptr<Command> first;
     static inline Command* last = nullptr;
+    static inline const uint8_t* map = nullptr;
+    static inline const TileSetEntry* tse = nullptr;
 
     static void clear() {
         clearColor = pen;
@@ -468,59 +489,140 @@ public:
         last = copy;
     }
 
-    static void draw(uint8_t* framebuffer) {
-        auto cursor = framebuffer;
-        for (int y = 0; y < screenHeight; y += 8, cursor += screenWidth * 8) {
-            if (clearColor)
-                memset(cursor, clearColor, screenWidth * 8);
-            int lowerBound = y + 8;
-            auto prev = &first;
-             while (auto cmd = prev->get()) {
-                if (lowerBound > cmd->minY) {
-                    if (y >= cmd->maxY) {
-                        cmd->dispose(*prev);
-                        // prev = &cmd->next;
-                        // *prev = std::move(cmd->next);
-                        continue;
-                    }
-                    cmd->draw(cursor, y);
+    static void drawSprites(int y, uint8_t* framebuffer) {
+        int lowerBound = y + windowHeight;
+        auto prev = &first;
+        while (auto cmd = prev->get()) {
+            if (lowerBound > cmd->minY) {
+                if (y >= cmd->maxY) {
+                    cmd->dispose(*prev);
+                    continue;
                 }
-                prev = &cmd->next;
+                cmd->draw(framebuffer, y);
             }
+            prev = &cmd->next;
+        }
+    }
+
+    struct Header {
+        uint16_t z;
+        uint32_t tseOffset;
+        uint8_t layerCount;
+        uint16_t mapWidth;
+        uint16_t mapHeight;
+        uint16_t tileWidth;
+        uint16_t tileHeight;
+    } __attribute__ ((packed));
+
+    static const uint8_t* drawTiles(int y, uint8_t* framebuffer, Header& header, const uint8_t* layer) {
+        auto srclayer = layer;
+        const int mapStride = header.mapWidth;
+        int ty = y / header.tileHeight;
+        int mty = ty + windowHeight / header.tileHeight;
+        if (mty > header.mapHeight)
+            mty = header.mapHeight;
+        layer += ty * mapStride;
+
+        int stx = 0;
+        int mtx = screenWidth / header.tileWidth;
+        int rtx = screenWidth % header.tileWidth;
+        mtx += stx;
+        if (mtx >= mapStride) {
+            mtx = mapStride;
+            rtx = 0;
+        }
+
+        auto line = framebuffer;
+        int tileHeight = header.tileHeight;
+        int tileWidth = header.tileWidth;
+
+        for (; ty < mty; ++ty, layer += mapStride, line += screenWidth * tileHeight) {
+            for (int tx = stx; tx < mtx; ++tx) {
+                auto id = layer[tx];
+                if (!id)
+                    continue;
+                id--;
+                auto src = tse[id].image;
+                int srcStride = tse[id].stride;
+                auto cursor = line + tx * tileWidth;
+                for (int i = 0; i < tileHeight; ++i, src += srcStride, cursor += screenWidth)
+                    SpriteCommand<0, 1, 0>::P_P(src, cursor, tileWidth, 0);
+            }
+            if (rtx) {
+                auto id = layer[mtx];
+                if (!id)
+                    continue;
+                id--;
+                auto src = tse[id].image;
+                int srcStride = tse[id].stride;
+                auto cursor = line + mtx * tileWidth;
+                for (int i = 0; i < tileHeight; ++i, src += srcStride, cursor += screenWidth)
+                    SpriteCommand<0, 1, 0>::P_P(src, cursor, rtx, 0);
+            }
+        }
+
+        return srclayer + header.mapHeight * mapStride;
+    }
+
+    static void drawMap(int y, uint8_t* framebuffer) {
+        auto& header = *(Header*)map;
+        auto layer = map + sizeof(Header);
+        bool didDrawSprites = false;
+        for (int i = 0, max = header.layerCount; i < max; ++i) {
+            switch (layer[0]) {
+            case 0:
+                layer = drawTiles(y, framebuffer, header, layer + 1);
+                break;
+            case 1:
+                didDrawSprites = true;
+                drawSprites(y, framebuffer);
+                layer++;
+                break;
+            default:
+                return;
+            }
+        }
+        if (!didDrawSprites)
+            drawSprites(y, framebuffer);
+    }
+
+    static void preDrawClean() {
+        RectCommand::clean();
+        TextCommand::clean();
+        SpriteCommand<true,  true,  true>::clean();
+        SpriteCommand<true,  false, true>::clean();
+        SpriteCommand<false, true,  true>::clean();
+        SpriteCommand<false, false, true>::clean();
+        SpriteCommand<true,  true,  false>::clean();
+        SpriteCommand<true,  false, false>::clean();
+        SpriteCommand<false, true,  false>::clean();
+        SpriteCommand<false, false, false>::clean();
+    }
+
+    static void draw(uint8_t* framebuffer) {
+        preDrawClean();
+        auto cursor = framebuffer;
+        for (int y = 0; y < screenHeight; y += windowHeight, cursor += screenWidth * windowHeight) {
+            if (clearColor)
+                memset(cursor, clearColor, screenWidth * windowHeight);
+            if (map && tse)
+                drawMap(y, cursor);
+            else
+                drawSprites(y, cursor);
         }
     }
 
     template<typename Func>
     static void draw(Func&& func) {
-        RectCommand::clean();
-        TextCommand::clean();
-        SpriteCommand<true, true, true>::clean();
-        SpriteCommand<true, false, true>::clean();
-        SpriteCommand<false, true, true>::clean();
-        SpriteCommand<false, false, true>::clean();
-        SpriteCommand<true, true, false>::clean();
-        SpriteCommand<true, false, false>::clean();
-        SpriteCommand<false, true, false>::clean();
-        SpriteCommand<false, false, false>::clean();
-
-        uint8_t framebuffer[screenWidth * 8];
-        for (int y = 0; y < screenHeight; y += 8) {
+        preDrawClean();
+        uint8_t framebuffer[screenWidth * windowHeight];
+        for (int y = 0; y < screenHeight; y += windowHeight) {
             if (clearColor)
-                memset(framebuffer, clearColor, screenWidth * 8);
-            int lowerBound = y + 8;
-            auto prev = &first;
-             while (auto cmd = prev->get()) {
-                if (lowerBound > cmd->minY) {
-                    if (y >= cmd->maxY) {
-                        cmd->dispose(*prev);
-                        // prev = &cmd->next;
-                        // *prev = std::move(cmd->next);
-                        continue;
-                    }
-                    cmd->draw(framebuffer, y);
-                }
-                prev = &cmd->next;
-            }
+                memset(framebuffer, clearColor, screenWidth * windowHeight);
+            if (map && tse)
+                drawMap(y, framebuffer);
+            else
+                drawSprites(y, framebuffer);
             func(framebuffer);
         }
     }

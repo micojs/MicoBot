@@ -274,6 +274,17 @@ js::Local clear(js::Local&, bool) {
     return {};
 }
 
+inline js::Local setTileMap(js::Local& args, bool) {
+    auto& arg0 = js::get(args, V_0);
+    if (auto ref = std::get_if<js::ResourceRef*>(&arg0)) {
+        // vsgl::map = (const uint8_t*) *ref;
+        // vsgl::tse = (const TileSetEntry*) (vsgl::map[2] | (vsgl::map[3] << 8) | (vsgl::map[4] << 16) | (vsgl::map[5] << 24));
+    } else {
+        // vsgl::map = nullptr;
+    }
+    return {};
+}
+
 js::Local setFont(js::Local& args, bool) {
     auto& arg0 = js::get(args, V_0);
     if (auto ref = std::get_if<js::ResourceRef*>(&arg0)) {
