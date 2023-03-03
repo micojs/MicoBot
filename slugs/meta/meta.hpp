@@ -40,7 +40,7 @@ inline constexpr uint16_t colorFromRGB(uint8_t R, uint8_t G, uint8_t B){
 #include "tight4x7.hpp"
 #include "tiny5x7.hpp"
 
-using vsgl = vsgl_t<160, 128>;
+using vsgl = vsgl_t<160, 128, 16>;
 
 void JSinit();
 void JSupdate(uint32_t time, uint32_t updateCount);
@@ -69,7 +69,7 @@ void TC5_Handler (void) {
     sampleCount--;
     if (sampleCount == 0) {
         profilerSample = js::_currentFunction;
-        sampleCount = 1000;
+        sampleCount = 1;
     }
     TC5->COUNT16.INTFLAG.bit.MC0 = 1; //Writing a 1 to INTFLAG.bit.MC0 clears the interrupt so that it will run again
 }
@@ -223,7 +223,40 @@ void loop() {
 
         gb.tft.setAddrWindow(0, 0, 160 - 1, 128 - 1);
         gb.tft.dataMode();
+        SPI.beginTransaction(tftSPISettings);
 
+        #if 1
+        vsgl::draw([](const uint8_t* framebuffer) {
+#define LDR(x, OFF) ((uint32_t*)(x))[(OFF) >> 2]
+#define NOP __asm__ volatile ("nop")
+                auto r0 = LDR(&SPI, 0);
+                auto r2 = LDR(r0, 0);
+                volatile auto& data = LDR(r2, 40);
+                for (int i = 0; i < 16 * 160; i++) {
+                    int c8 = *framebuffer++;
+                    int c16 = palette[c8];
+
+                    data = c16;
+                    NOP;
+                    NOP;
+                    NOP;
+                    NOP;
+                    NOP;
+                    NOP;
+                    NOP;
+
+                    data = c16 >> 8;
+                    NOP;
+                    NOP;
+                    NOP;
+                    NOP;
+                    NOP;
+                    NOP;
+                }
+#undef LDR
+#undef NOP
+            });
+        #else
         vsgl::draw([Y=0](const uint8_t* framebuffer) mutable {
             static uint16_t out[160];
             auto fb = framebuffer;
@@ -231,7 +264,6 @@ void loop() {
                 for (int x = 0; x < 160; ++x) {
                     out[x] = palette[*fb++];
                 }
-                // gb.tft.drawBuffer(0, Y++, out, 160, 1);
 
                 if (Y++) {
                     wait_for_transfers_done();
@@ -242,6 +274,7 @@ void loop() {
                 gb.tft.sendBuffer(out, 160);
             }
         });
+        #endif
     }
 
     wait_for_transfers_done();
