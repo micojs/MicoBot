@@ -19,7 +19,7 @@ const {PreBuild} = require('./PreBuild.js');
 const {ImageEditor} = require('./ImageEditor.js');
 const {TileMapEditor} = require('./TileMapEditor.js');
 // const {MusicEditor} = require('./MusicEditor.js');
-const {FS2Zip, Zip2FS} = require('./FS2Zip.js');
+const {FS2Zip, Zip2FS, getMimeType} = require('./FS2Zip.js');
 
 const uploaders = {
     espboy:ESPboy,
@@ -236,7 +236,8 @@ class IDE {
                 fr.readAsArrayBuffer(file);
             } else {
 	        fr.onload = loadFile.bind(this, fr, file);
-                if (/\.js$/i.test(file.name))
+                const [left, right] = getMimeType(file.name).split("/");
+                if (left == "text" || (right == "json" || right == "javascript"))
                     fr.readAsText(file);
                 else
                     fr.readAsDataURL(file);
