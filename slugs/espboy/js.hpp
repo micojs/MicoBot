@@ -369,7 +369,7 @@ namespace js {
     template<typename T>
     bool has(const Tagged& v) {
         PROFILER;
-        static int t = Tagged{T{}}.index();
+        static std::size_t t = Tagged{T{}}.index();
         return v.index() == t;
     }
 
