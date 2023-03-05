@@ -474,6 +474,7 @@ public:
     static inline Command* last = nullptr;
     static inline const uint8_t* map = nullptr;
     static inline const TileSetEntry* tse = nullptr;
+    static inline int32_t cameraX = 0, cameraY = 0;
 
     static void clear() {
         clearColor = pen;
@@ -517,51 +518,272 @@ public:
     static const uint8_t* drawTiles(int y, uint8_t* framebuffer, Header& header, const uint8_t* layer) {
         auto srclayer = layer;
         const int mapStride = header.mapWidth;
-        int ty = y / header.tileHeight;
-        int mty = ty + windowHeight / header.tileHeight;
-        if (mty > header.mapHeight)
-            mty = header.mapHeight;
-        layer += ty * mapStride;
+        const int mapHeight = header.mapHeight;
+        const int tileHeight = header.tileHeight;
+        const int tileWidth = header.tileWidth;
 
-        int stx = 0;
-        int mtx = screenWidth / header.tileWidth;
-        int rtx = screenWidth % header.tileWidth;
-        mtx += stx;
-        if (mtx >= mapStride) {
-            mtx = mapStride;
-            rtx = 0;
+        int rowsPerWindow = windowHeight / tileHeight;
+        const int rowRemainder = windowHeight % tileHeight;
+        int colsPerWindow = screenWidth / header.tileWidth;
+        const int colRemainder = screenWidth % header.tileWidth;
+
+        int startY = y + cameraY;
+        if (startY < 0) {
+            startY %= mapHeight * tileHeight;
+            startY += mapHeight * tileHeight;
         }
 
-        auto line = framebuffer;
-        int tileHeight = header.tileHeight;
-        int tileWidth = header.tileWidth;
+        int startX = cameraX;
+        if (startX < 0) {
+            startX %= mapStride * tileWidth;
+            startX += mapStride * tileWidth;
+        }
 
-        for (; ty < mty; ++ty, layer += mapStride, line += screenWidth * tileHeight) {
-            for (int tx = stx; tx < mtx; ++tx) {
-                auto id = layer[tx];
+        int startRow = startY / tileHeight;
+        int startRowHeight = startY % tileHeight;
+        startRow %= mapHeight;
+
+        int startCol = startX / tileWidth;
+        int startColWidth = startX % tileWidth;
+        startCol %= mapStride;
+
+        if (startRowHeight) {
+            startRowHeight = tileHeight - startRowHeight;
+            if (startRowHeight <= rowRemainder) {
+                rowsPerWindow++;
+            }
+        }
+
+        if (startColWidth) {
+            startColWidth = tileWidth - startColWidth;
+            if (startColWidth <= colRemainder) {
+                colsPerWindow++;
+            }
+        }
+
+        int endRow = startRow + rowsPerWindow;
+        int endRowHeight = windowHeight - startRowHeight - (rowsPerWindow - (startRowHeight ? 1 : 0)) * tileHeight;
+        int endColWidth = screenWidth - startColWidth - (colsPerWindow - (startColWidth ? 1 : 0)) * tileWidth;
+
+        auto line = framebuffer;
+
+        // memset(framebuffer, 1, windowHeight * screenWidth);
+
+        if (startRowHeight) {
+            layer = srclayer + startRow * mapStride;
+            int lineOffset = 0;
+            int colOffset = startCol;
+
+            if (startColWidth) {
+                int id = layer[colOffset];
+                if (++colOffset == mapStride)
+                    colOffset = 0;
+                if (id) {
+                    id--;
+                    int srcStride = tse[id].stride;
+                    auto src = tse[id].image + (tileHeight - startRowHeight) * srcStride + (tileWidth - startColWidth);
+                    auto cursor = line;
+                    for (int i = 0; i < startRowHeight; ++i, src += srcStride, cursor += screenWidth)
+                        SpriteCommand<0, 1, 0>::P_P(src, cursor, startColWidth, 0);
+                }
+                lineOffset = startColWidth;
+            }
+
+            for (int tx = startColWidth ? 1 : 0; tx < colsPerWindow; ++tx, lineOffset += tileWidth) {
+                int id = layer[colOffset];
+                if (++colOffset == mapStride)
+                    colOffset = 0;
+                if (!id)
+                    continue;
+                id--;
+                int srcStride = tse[id].stride;
+                auto src = tse[id].image + (tileHeight - startRowHeight) * srcStride;
+                auto cursor = line + lineOffset;
+                for (int i = 0; i < startRowHeight; ++i, src += srcStride, cursor += screenWidth)
+                    SpriteCommand<0, 1, 0>::P_P(src, cursor, tileWidth, 0);
+            }
+
+            if (endColWidth) {
+                int id = layer[colOffset];
+                if (id) {
+                    id--;
+                    int srcStride = tse[id].stride;
+                    auto src = tse[id].image + (tileHeight - startRowHeight) * srcStride;
+                    auto cursor = line + lineOffset;
+                    for (int i = 0; i < startRowHeight; ++i, src += srcStride, cursor += screenWidth)
+                        SpriteCommand<0, 1, 0>::P_P(src, cursor, endColWidth, 0);
+                }
+            }
+
+            line += startRowHeight * screenWidth;
+        }
+
+        for (int row = startRowHeight ? 1 : 0; row < rowsPerWindow; ++row, line += screenWidth * tileHeight) {
+            int colOffset = startCol;
+
+            int y = startRow + row;
+            while (y >= mapHeight)
+                y -= mapHeight;
+            layer = srclayer + y * mapStride;
+
+            int lineOffset = 0;
+
+            if (startColWidth) {
+                int id = layer[startCol];
+                if (++colOffset == mapStride)
+                    colOffset = 0;
+                if (id) {
+                    id--;
+                    int srcStride = tse[id].stride;
+                    auto src = tse[id].image + (tileWidth - startColWidth);
+                    auto cursor = line;
+                    for (int i = 0; i < tileHeight; ++i, src += srcStride, cursor += screenWidth)
+                        SpriteCommand<0, 1, 0>::P_P(src, cursor, startColWidth, 0);
+                }
+                lineOffset = startColWidth;
+            }
+
+            for (int tx = startColWidth ? 1 : 0; tx < colsPerWindow; ++tx, lineOffset += tileWidth) {
+                int id = layer[colOffset];
+                if (++colOffset == mapStride)
+                    colOffset = 0;
                 if (!id)
                     continue;
                 id--;
                 auto src = tse[id].image;
                 int srcStride = tse[id].stride;
-                auto cursor = line + tx * tileWidth;
+                auto cursor = line + lineOffset;
                 for (int i = 0; i < tileHeight; ++i, src += srcStride, cursor += screenWidth)
                     SpriteCommand<0, 1, 0>::P_P(src, cursor, tileWidth, 0);
             }
-            if (rtx) {
-                auto id = layer[mtx];
+            if (endColWidth) {
+                int id = layer[colOffset];
                 if (!id)
                     continue;
                 id--;
                 auto src = tse[id].image;
                 int srcStride = tse[id].stride;
-                auto cursor = line + mtx * tileWidth;
+                auto cursor = line + lineOffset;
                 for (int i = 0; i < tileHeight; ++i, src += srcStride, cursor += screenWidth)
-                    SpriteCommand<0, 1, 0>::P_P(src, cursor, rtx, 0);
+                    SpriteCommand<0, 1, 0>::P_P(src, cursor, endColWidth, 0);
             }
         }
 
+        if (endRowHeight) {
+            int lineOffset = 0;
+            int colOffset = startCol;
+
+            endRow %= mapHeight;
+            layer = srclayer + endRow * mapStride;
+            if (endRowHeight > tileHeight)
+                endRowHeight = tileHeight;
+
+
+            if (startColWidth) {
+                int id = layer[colOffset];
+                if (++colOffset == mapStride)
+                    colOffset = 0;
+                if (id) {
+                    id--;
+                    int srcStride = tse[id].stride;
+                    auto src = tse[id].image + (tileWidth - startColWidth);
+                    auto cursor = line;
+                    for (int i = 0; i < endRowHeight; ++i, src += srcStride, cursor += screenWidth)
+                        SpriteCommand<0, 1, 0>::P_P(src, cursor, startColWidth, 0);
+                }
+                lineOffset = startColWidth;
+            }
+
+            for (int tx = startColWidth ? 1 : 0; tx < colsPerWindow; ++tx, lineOffset += tileWidth) {
+                int id = layer[colOffset];
+                if (++colOffset == mapStride)
+                    colOffset = 0;
+                if (!id)
+                    continue;
+                id--;
+                int srcStride = tse[id].stride;
+                auto src = tse[id].image;
+                auto cursor = line + lineOffset;
+                for (int i = 0; i < endRowHeight; ++i, src += srcStride, cursor += screenWidth)
+                    SpriteCommand<0, 1, 0>::P_P(src, cursor, tileWidth, 0);
+            }
+
+            if (endColWidth) {
+                auto id = layer[colOffset];
+                if (id) {
+                    id--;
+                    int srcStride = tse[id].stride;
+                    auto src = tse[id].image;
+                    auto cursor = line + lineOffset;
+                    for (int i = 0; i < endRowHeight; ++i, src += srcStride, cursor += screenWidth)
+                        SpriteCommand<0, 1, 0>::P_P(src, cursor, endColWidth, 0);
+                }
+            }
+        }
+
+        // for (int i = 0; i < screenWidth; i += 2)
+        //     framebuffer[(windowHeight - 1) * screenWidth + i] = 40;
+
+
         return srclayer + header.mapHeight * mapStride;
+    }
+
+    static int32_t getTileProperty(int32_t x, int32_t y, uint32_t key, uint32_t layerNumber) {
+        if (!map)
+            return 0;
+
+        auto& header = *(Header*)map;
+        auto layer = map + sizeof(Header);
+        for (int i = 0, max = header.layerCount; i < max; ++i) {
+            switch (layer[0]) {
+            case 0:
+                layer++;
+                if (i == layerNumber) {
+                    const int mapStride = header.mapWidth;
+                    const int mapHeight = header.mapHeight;
+                    const int tileHeight = header.tileHeight;
+                    const int tileWidth = header.tileWidth;
+
+                    y += cameraY;
+                    if (y < 0) {
+                        y %= mapHeight * tileHeight;
+                        y += mapHeight * tileHeight;
+                    }
+
+                    x += cameraX;
+                    if (x < 0) {
+                        x %= mapStride * tileWidth;
+                        x += mapStride * tileWidth;
+                    }
+
+                    int row = (y / tileHeight) % mapHeight;
+                    int col = (x /  tileWidth)  % mapStride;
+                    int id = layer[row * mapStride + col];
+
+                    if (id == 0 || tse[id - 1].data == 0)
+                        return 0;
+
+                    uint32_t* hashmap = ((uint32_t*) tse) + tse[id - 1].data;
+                    auto length = *hashmap++;
+                    for (uint32_t j = 0; j < length; ++j, hashmap += 2) {
+                        if (hashmap[0] == key) {
+                            return hashmap[1];
+                        }
+                    }
+
+                    return 0;
+                }
+                layer += header.mapHeight * header.mapWidth;
+                break;
+            case 1:
+                layer++;
+                break;
+            default:
+                return 0;
+            }
+        }
+
+        return 0;
     }
 
     static void drawMap(int y, uint8_t* framebuffer) {
@@ -614,6 +836,7 @@ public:
 
     template<typename Func>
     static void draw(Func&& func) {
+        // cameraY++;
         preDrawClean();
         uint8_t framebuffer[screenWidth * windowHeight];
         for (int y = 0; y < screenHeight; y += windowHeight) {

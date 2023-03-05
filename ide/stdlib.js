@@ -107,6 +107,11 @@ declare function setFPS(fps:number):void;
 declare function setTileMap(map:TileMapResource):void;
 
 /**
+ * Returns the value of the property of the tile under the given coordinates
+ */
+declare function getTileProperty(x:number, y:number, property:string):number;
+
+/**
  * Sets the current drawing color.
  * Returns a color.
  */

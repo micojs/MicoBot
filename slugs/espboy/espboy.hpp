@@ -274,6 +274,15 @@ js::Local clear(js::Local&, bool) {
     return {};
 }
 
+inline js::Local getTileProperty(js::Local& args, bool) {
+    // vsgl::cameraX = js::to<int32_t>(CAMERA_X);
+    // vsgl::cameraY = js::to<int32_t>(CAMERA_Y);
+    auto x = js::to<int32_t>(js::get(args, 0));
+    auto y = js::to<int32_t>(js::get(args, 1));
+    auto prop = js::toString(js::get(args, 2));
+    return {0}; // {vsgl::getTileProperty(x, y, prop->hash, 0)};
+}
+
 inline js::Local setTileMap(js::Local& args, bool) {
     auto& arg0 = js::get(args, V_0);
     if (auto ref = std::get_if<js::ResourceRef*>(&arg0)) {

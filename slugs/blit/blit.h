@@ -43,6 +43,8 @@ extern js::Local LEFT; // var
 extern js::Local DOWN; // var
 extern js::Local UP; // var
 extern js::Local FRAMETIME; // var
+extern js::Local CAMERA_X; // var
+extern js::Local CAMERA_Y; // var
 
 inline uint32_t startTime;
 inline uint32_t updateCount = 0;
@@ -121,6 +123,9 @@ void update(uint32_t) {
 void render(uint32_t) {
     auto time = blit::now();
     JSrender(updateDelta);
+
+    vsgl::cameraX = js::to<int32_t>(CAMERA_X);
+    vsgl::cameraY = js::to<int32_t>(CAMERA_Y);
 
     #if ENABLE_PROFILER != 0
     {
@@ -215,6 +220,27 @@ inline js::Local setLED(js::Local& args, bool) {
 
 inline js::Local clear(js::Local&, bool) {
     vsgl::clear();
+    return {};
+}
+
+inline js::Local getTileProperty(js::Local& args, bool) {
+    vsgl::cameraX = js::to<int32_t>(CAMERA_X);
+    vsgl::cameraY = js::to<int32_t>(CAMERA_Y);
+    auto x = js::to<int32_t>(js::get(args, 0));
+    auto y = js::to<int32_t>(js::get(args, 1));
+    auto prop = js::toString(js::get(args, 2));
+    // printf("%s %p %p %p %p\n", prop.data(), prop->hash, js::hash("recolor"));
+    return {vsgl::getTileProperty(x, y, prop->hash, 0)};
+}
+
+inline js::Local setTileMap(js::Local& args, bool) {
+    auto& arg0 = js::get(args, V_0);
+    if (auto ref = std::get_if<js::ResourceRef*>(&arg0)) {
+        vsgl::map = (const uint8_t*) *ref;
+        vsgl::tse = (const TileSetEntry*) (vsgl::map[2] | (vsgl::map[3] << 8) | (vsgl::map[4] << 16) | (vsgl::map[5] << 24));
+    } else {
+        vsgl::map = nullptr;
+    }
     return {};
 }
 
